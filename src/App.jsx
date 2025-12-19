@@ -263,7 +263,7 @@ const PaywallModal = ({ show, onClose, userId }) => {
                     onClick={handleUpgrade}
                     className="w-full py-3 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl transition-all shadow-lg mb-3 flex items-center justify-center"
                 >
-                    <CreditCard className="w-5 h-5 mr-2"/> Upgrade - $49/mo
+                    <CreditCard className="w-5 h-5 mr-2"/> Upgrade - $10/mo
                 </button>
                 <button onClick={onClose} className="text-sm text-slate-400 hover:text-white">
                     Maybe Later (Return to Home)
