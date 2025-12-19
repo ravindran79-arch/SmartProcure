@@ -100,7 +100,10 @@ const COMPREHENSIVE_REPORT_SCHEMA = {
                 "properties": {
                     "requirementFromRFQ": { "type": "STRING" },
                     "vendorResponse": { "type": "STRING" },
-                    "complianceScore": { "type": "NUMBER", "description": "0 = Non-Compliant, 1 = Compliant" },
+                    "complianceScore": { 
+                        "type": "NUMBER", 
+                        "description": "STRICT SCORING: 1 = Fully Compliant, 0.5 = Partially Compliant, 0 = Non-Compliant." 
+                    },
                     "flag": { "type": "STRING", "enum": ["COMPLIANT", "PARTIAL", "NON-COMPLIANT"] },
                     "category": { "type": "STRING", "enum": CATEGORY_ENUM },
                     "procurementAction": { 
@@ -136,6 +139,7 @@ const getCompliancePercentage = (report) => {
     const findings = report.findings || []; 
     const totalScore = findings.reduce((sum, item) => {
         let score = item.complianceScore || 0;
+        // Check for runaway AI values (just in case), but primarily trust the 0/0.5/1 logic
         if (score > 1) { score = score / 100; }
         return sum + score;
     }, 0);
@@ -228,7 +232,7 @@ const FormInput = ({ label, name, value, onChange, type, placeholder, id }) => (
 const PaywallModal = ({ show, onClose, userId }) => {
     if (!show) return null;
     
-    // ✅ NEW SMARTPROCURE STRIPE LINK ($49/mo)
+    // SMARTPROCURE STRIPE LINK
     const STRIPE_PAYMENT_LINK = "https://buy.stripe.com/00waEW2Bz25Eg212xlafS01"; 
 
     const handleUpgrade = () => {
@@ -284,7 +288,7 @@ const ComplianceReport = ({ report }) => {
     const findings = report.findings || []; 
     const overallPercentage = getCompliancePercentage(report);
     
-    // Risk Color Logic (Inverted from SmartBids: High Risk = Red)
+    // Risk Color Logic
     const riskColor = report.riskLevel === 'CRITICAL' || report.riskLevel === 'HIGH RISK' ? 'text-red-500' 
         : report.riskLevel === 'MEDIUM RISK' ? 'text-amber-500' : 'text-green-500';
 
@@ -412,7 +416,6 @@ const ComplianceReport = ({ report }) => {
 
 const ComplianceRanking = ({ reportsHistory, loadReportFromHistory, deleteReport, currentUser }) => { 
     if (reportsHistory.length === 0) return null;
-    // For Procurement, we rank by "Low Risk" (Score closer to 100 on Compliance is good, but maybe sort by Date is better for Procure. Let's stick to Compliance % for consistency)
     const groupedReports = reportsHistory.reduce((acc, report) => {
         const rfqName = report.projectTitle || report.rfqName || "Untitled Project";
         const percentage = getCompliancePercentage(report); 
@@ -486,7 +489,7 @@ const ReportHistory = ({ reportsHistory, loadReportFromHistory, isAuthReady, use
 };
 
 // --- PAGE COMPONENTS (AuthPage) ---
-// Kept styling EXACTLY like SmartBids, just text changes
+// UPDATED: Title changed to "Welcome to SmartProcure"
 const AuthPage = ({ setCurrentPage, setErrorMessage, errorMessage, db, auth }) => {
     const [regForm, setRegForm] = useState({ name: '', designation: '', company: '', email: '', phone: '', password: '' });
     const [loginForm, setLoginForm] = useState({ email: '', password: '' });
@@ -557,7 +560,7 @@ const AuthPage = ({ setCurrentPage, setErrorMessage, errorMessage, db, auth }) =
 
     return (
         <div className="p-8 bg-slate-800 rounded-2xl shadow-2xl shadow-black/50 border border-slate-700 mt-12 mb-12">
-            <h2 className="text-3xl font-extrabold text-white text-center">SmartProcure</h2>
+            <h2 className="text-3xl font-extrabold text-white text-center">Welcome to SmartProcure</h2>
             <p className="text-lg font-medium text-blue-400 text-center mb-6">AI-Driven Vendor Evaluation: Risk Less, Buy Smarter.</p>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
@@ -576,7 +579,6 @@ const AuthPage = ({ setCurrentPage, setErrorMessage, errorMessage, db, auth }) =
                             {isSubmitting ? 'Registering...' : 'Register'}
                         </button>
                         
-                        {/* Legal Disclaimer maintained */}
                         <div className="mt-4 text-[10px] text-slate-500 text-center leading-tight">
                             By registering, you agree to our Terms of Service and Privacy Policy.
                         </div>
@@ -613,7 +615,6 @@ const AdminDashboard = ({ setCurrentPage, currentUser, reportsHistory, loadRepor
     getDocs(collection(getFirestore(), 'users')).then(snap => setUserList(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
   }, []);
   
-  // Reuse export logic but with simplified data for now
   const exportToCSV = (data, filename) => {
     const csvContent = "data:text/csv;charset=utf-8," + Object.keys(data[0]).join(",") + "\n" + data.map(e => Object.values(e).map(v => `"${v}"`).join(",")).join("\n");
     const link = document.createElement("a"); link.href = encodeURI(csvContent); link.download = filename; document.body.appendChild(link); link.click(); document.body.removeChild(link);
@@ -629,7 +630,6 @@ const AdminDashboard = ({ setCurrentPage, currentUser, reportsHistory, loadRepor
         </div>
       </div>
       
-      {/* List of recent audits */}
       <div className="pt-4 border-t border-slate-700">
         <h3 className="text-xl font-bold text-white mb-4 flex items-center"><Eye className="w-6 h-6 mr-2 text-blue-400" /> Recent Vendor Audits</h3>
         <div className="space-y-4">{reportsHistory.slice(0, 15).map(item => (
@@ -838,7 +838,7 @@ const App = () => {
             const rfqContent = await processFile(RFQFile);
             const bidContent = await processFile(BidFile);
             
-            // --- SMARTPROCURE SYSTEM PROMPT ---
+            // --- UPDATED SYSTEM PROMPT FOR SCORING LOGIC ---
             const systemPrompt = {
                 parts: [{
                     text: `You are the SmartProcure AI Auditor. 
@@ -851,10 +851,16 @@ const App = () => {
 
                     TASK:
                     1. EXTRACT Vendor Name, Total Bid Value, and Payment Terms.
-                    2. CALCULATE a 'Risk Score' (0-100) based on non-compliance and vague language (e.g. "we aim to", "best effort").
+                    2. CALCULATE a 'Risk Score' (0-100) based on non-compliance and vague language.
                     3. IDENTIFY 'Red Line Alerts' -> Any legal deviations (Liability, Indemnity, Termination).
                     4. AUDIT Mandatory Requirements (NDA, Timeline, Validity).
                     5. COMPARE Line-by-Line: Does the Bid meet the RFQ?
+                    
+                    **SCORING RULES:**
+                    - Output findings with 'complianceScore' based strictly on this scale:
+                    - **1.0** = Fully Compliant
+                    - **0.5** = Partially Compliant / Vague
+                    - **0.0** = Non-Compliant / Missing
                     
                     OUTPUT: JSON matching the schema provided.`
                 }]
