@@ -1,0 +1,1 @@
+# smartbid-compliance-ChatGPT-Version
