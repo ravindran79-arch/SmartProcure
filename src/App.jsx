@@ -4,7 +4,7 @@ import {
     Save, Clock, Zap, ArrowLeft, Users, Briefcase, Layers, UserPlus, LogIn, Tag,
     Shield, User, HardDrive, Phone, Mail, Building, Trash2, Eye, DollarSign, Activity, 
     Printer, Download, MapPin, Calendar, ThumbsUp, ThumbsDown, Gavel, Paperclip, Copy, Award, Lock, CreditCard, Info,
-    Search, FileCheck, XCircle, Scale
+    Scale, FileCheck, XCircle, Search
 } from 'lucide-react'; 
 
 // --- FIREBASE IMPORTS ---
@@ -34,10 +34,10 @@ const db = getFirestore(app);
 
 // --- CONSTANTS ---
 const API_URL = '/api/analyze'; 
-const MAX_FREE_AUDITS = 3; 
 
-// UPDATED: Categories for Procurement
+// UPDATED: Procurement Categories
 const CATEGORY_ENUM = ["MANDATORY", "COMMERCIAL", "TECHNICAL", "LEGAL", "HSE/QUALITY", "TIMELINE", "OTHER"];
+const MAX_FREE_AUDITS = 3; 
 
 const PAGE = {
     HOME: 'HOME',
@@ -46,7 +46,7 @@ const PAGE = {
     HISTORY: 'HISTORY' 
 };
 
-// --- NEW SMARTPROCURE SCHEMA ---
+// --- SMARTPROCURE JSON SCHEMA ---
 const COMPREHENSIVE_REPORT_SCHEMA = {
     type: "OBJECT",
     description: "Procurement Audit Report analyzing Vendor Proposal against RFQ.",
@@ -136,7 +136,7 @@ const getCompliancePercentage = (report) => {
     const findings = report.findings || []; 
     const totalScore = findings.reduce((sum, item) => {
         let score = item.complianceScore || 0;
-        if (score > 1) score = score / 100;
+        if (score > 1) { score = score / 100; }
         return sum + score;
     }, 0);
     const maxScore = findings.length * 1;
@@ -201,7 +201,7 @@ class ErrorBoundary extends React.Component {
     }
 }
 
-// --- COMPONENTS ---
+// --- LEAF COMPONENTS ---
 const handleFileChange = (e, setFile, setErrorMessage) => {
     if (e.target.files.length > 0) {
         setFile(e.target.files[0]);
@@ -228,28 +228,42 @@ const FormInput = ({ label, name, value, onChange, type, placeholder, id }) => (
 const PaywallModal = ({ show, onClose, userId }) => {
     if (!show) return null;
     
-    // ✅ NEW STRIPE LINK FOR SMARTPROCURE
+    // ✅ NEW SMARTPROCURE STRIPE LINK ($49/mo)
     const STRIPE_PAYMENT_LINK = "https://buy.stripe.com/00waEW2Bz25Eg212xlafS01"; 
 
     const handleUpgrade = () => {
         if (userId) {
             window.location.href = `${STRIPE_PAYMENT_LINK}?client_reference_id=${userId}`;
         } else {
-            alert("Error: User ID missing.");
+            alert("Error: User ID missing. Please log in again.");
         }
     };
+
     return (
         <div className="fixed inset-0 bg-slate-900/90 backdrop-blur-sm flex items-center justify-center z-50 p-4 no-print">
             <div className="bg-slate-800 rounded-2xl shadow-2xl border border-blue-500/50 max-w-md w-full p-8 text-center relative">
-                <div className="absolute -top-10 left-1/2 transform -translate-x-1/2 bg-blue-600 rounded-full p-4 shadow-lg">
+                <div className="absolute -top-10 left-1/2 transform -translate-x-1/2 bg-blue-600 rounded-full p-4 shadow-lg shadow-blue-500/50">
                     <Lock className="w-10 h-10 text-white" />
                 </div>
                 <h2 className="text-2xl font-bold text-white mt-8 mb-2">Audit Limit Reached</h2>
-                <p className="text-slate-300 mb-6">Upgrade to <strong>SmartProcure Pro</strong> for unlimited vendor evaluations.</p>
-                <button onClick={handleUpgrade} className="w-full py-3 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl transition-all shadow-lg mb-3 flex items-center justify-center">
+                <p className="text-slate-300 mb-6">
+                    You have used your <span className="text-blue-400 font-bold">3 Free Audits</span>.
+                    <br/>To continue further vendor evaluations, upgrade to Pro.
+                </p>
+                <div className="bg-slate-700/50 rounded-xl p-4 mb-6 text-left space-y-3">
+                    <div className="flex items-center text-sm text-white"><CheckCircle className="w-4 h-4 mr-3 text-green-400"/> Unlimited Procurement Audits</div>
+                    <div className="flex items-center text-sm text-white"><CheckCircle className="w-4 h-4 mr-3 text-green-400"/> AI Risk Scoring & Red-Lining</div>
+                    <div className="flex items-center text-sm text-white"><CheckCircle className="w-4 h-4 mr-3 text-green-400"/> Market Comparison Data</div>
+                </div>
+                <button 
+                    onClick={handleUpgrade}
+                    className="w-full py-3 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl transition-all shadow-lg mb-3 flex items-center justify-center"
+                >
                     <CreditCard className="w-5 h-5 mr-2"/> Upgrade - $49/mo
                 </button>
-                <button onClick={onClose} className="text-sm text-slate-400 hover:text-white">Cancel</button>
+                <button onClick={onClose} className="text-sm text-slate-400 hover:text-white">
+                    Maybe Later (Return to Home)
+                </button>
             </div>
         </div>
     );
@@ -264,13 +278,18 @@ const FileUploader = ({ title, file, setFile, color, requiredText }) => (
     </div>
 );
 
-// --- MAIN REPORT COMPONENT (PROCUREMENT VIEW) ---
+// --- MID-LEVEL COMPONENTS (PROCUREMENT VIEW) ---
+
 const ComplianceReport = ({ report }) => {
+    const findings = report.findings || []; 
     const overallPercentage = getCompliancePercentage(report);
     
-    // Determine Risk Color
+    // Risk Color Logic (Inverted from SmartBids: High Risk = Red)
     const riskColor = report.riskLevel === 'CRITICAL' || report.riskLevel === 'HIGH RISK' ? 'text-red-500' 
         : report.riskLevel === 'MEDIUM RISK' ? 'text-amber-500' : 'text-green-500';
+
+    const counts = findings.reduce((acc, item) => { const flag = item.flag || 'NON-COMPLIANT'; acc[flag] = (acc[flag] || 0) + 1; return acc; }, { 'COMPLIANT': 0, 'PARTIAL': 0, 'NON-COMPLIANT': 0 });
+    const getWidth = (flag) => findings.length === 0 ? '0%' : `${(counts[flag] / findings.length) * 100}%`;
 
     return (
         <div id="printable-compliance-report" className="bg-slate-800 p-8 rounded-2xl shadow-2xl border border-slate-700 mt-8">
@@ -279,62 +298,82 @@ const ComplianceReport = ({ report }) => {
                     <h2 className="text-3xl font-extrabold text-white flex items-center"><Shield className="w-8 h-8 mr-3 text-blue-400"/> Vendor Evaluation Report</h2>
                     <p className="text-slate-400 text-sm mt-1">Vendor: <span className="text-white font-bold">{report.vendorName || "Unknown"}</span></p>
                 </div>
-                <button onClick={() => window.print()} className="text-sm text-slate-400 hover:text-white bg-slate-700 px-3 py-2 rounded-lg flex items-center no-print">
+                <button 
+                    onClick={() => window.print()} 
+                    className="text-sm text-slate-400 hover:text-white bg-slate-700 px-3 py-2 rounded-lg flex items-center no-print"
+                >
                     <Printer className="w-4 h-4 mr-2"/> Print / PDF
                 </button>
             </div>
 
-            {/* SCORECARDS */}
-            <div className="mb-10 grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div className="p-5 bg-slate-700/50 rounded-xl border border-slate-600 text-center">
-                    <p className="text-sm font-semibold text-slate-400 mb-1">Compliance Match</p>
-                    <div className="text-4xl font-extrabold text-white">{overallPercentage}%</div>
-                </div>
-                <div className="p-5 bg-slate-700/50 rounded-xl border border-slate-600 text-center">
-                    <p className="text-sm font-semibold text-slate-400 mb-1">Risk Assessment</p>
-                    <div className={`text-4xl font-extrabold ${riskColor}`}>{report.riskLevel}</div>
-                    <p className="text-xs text-slate-500 mt-1">Score: {report.riskScore}/100</p>
-                </div>
-                <div className="p-5 bg-slate-700/50 rounded-xl border border-slate-600 text-center">
-                    <p className="text-sm font-semibold text-slate-400 mb-1">Total Bid Value</p>
-                    <div className="text-2xl font-extrabold text-green-400 mt-2">{report.totalBidValue || "Not Found"}</div>
-                </div>
-            </div>
-
             {/* EXECUTIVE SUMMARY */}
-            <div className="mb-8 p-6 bg-slate-700/30 rounded-xl border border-blue-500/30">
-                <h3 className="text-lg font-bold text-blue-200 mb-2 flex items-center"><FileText className="w-5 h-5 mr-2"/> Auditor's Summary</h3>
-                <p className="text-slate-300 italic leading-relaxed">{report.executiveSummary}</p>
+            {report.executiveSummary && (
+                <div className="mb-8 p-6 bg-gradient-to-r from-blue-900/40 to-slate-800 rounded-xl border border-blue-500/30">
+                    <div className="flex justify-between items-start mb-3">
+                        <h3 className="text-xl font-bold text-blue-200 flex items-center"><FileText className="w-5 h-5 mr-2 text-blue-400"/> Auditor's Executive Summary</h3>
+                        <button 
+                            onClick={() => navigator.clipboard.writeText(report.executiveSummary)}
+                            className="text-xs flex items-center bg-blue-700 hover:bg-blue-600 text-white px-3 py-1 rounded transition no-print"
+                        >
+                            <Copy className="w-3 h-3 mr-1"/> Copy Text
+                        </button>
+                    </div>
+                    <p className="text-slate-300 italic leading-relaxed border-l-4 border-blue-500 pl-4 whitespace-pre-line">"{report.executiveSummary}"</p>
+                </div>
+            )}
+
+            {/* METRIC CARDS */}
+            <div className="mb-10 grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div className="p-5 bg-slate-700/50 rounded-xl border border-amber-600/50 text-center">
+                    <p className="text-sm font-semibold text-white mb-1"><BarChart2 className="w-4 h-4 inline mr-2"/> RFQ Match Score</p>
+                    <div className="text-5xl font-extrabold text-amber-400">{overallPercentage}%</div>
+                    <div className="w-full h-3 bg-slate-900 rounded-full flex overflow-hidden mt-4"><div style={{ width: getWidth('COMPLIANT') }} className="bg-green-500"></div><div style={{ width: getWidth('PARTIAL') }} className="bg-amber-500"></div><div style={{ width: getWidth('NON-COMPLIANT') }} className="bg-red-500"></div></div>
+                </div>
+                
+                <div className="p-5 bg-slate-700/50 rounded-xl border border-red-600/50 text-center relative overflow-hidden">
+                    <p className="text-sm font-semibold text-white mb-1"><Activity className="w-4 h-4 inline mr-2 text-red-400"/> Risk Assessment</p>
+                    <div className={`text-4xl font-extrabold ${riskColor} mt-2`}>{report.riskLevel}</div>
+                    <div className="mt-3">
+                         <span className="px-3 py-1 rounded-full bg-slate-900/50 border border-slate-500 text-xs text-slate-300 font-bold uppercase">
+                            Risk Score: {report.riskScore}/100
+                        </span>
+                    </div>
+                </div>
+
+                 <div className="p-5 bg-slate-700/50 rounded-xl border border-green-600/50 text-center">
+                    <p className="text-sm font-semibold text-white mb-1"><DollarSign className="w-4 h-4 inline mr-2 text-green-400"/> Total Bid Value</p>
+                    <div className="text-3xl font-extrabold text-white mt-4">{report.totalBidValue || "N/A"}</div>
+                </div>
             </div>
 
-            {/* COMMERCIAL & MANDATORY CHECKS */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-10">
+            {/* COMMERCIAL & MANDATORY */}
+            <div className="mb-10 grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="p-5 bg-slate-900/50 rounded-xl border border-slate-700">
-                    <h4 className="text-md font-bold text-white mb-4 flex items-center"><DollarSign className="w-4 h-4 mr-2 text-green-400"/> Commercial Terms</h4>
-                    <ul className="space-y-3 text-sm">
-                        <li className="flex justify-between border-b border-slate-800 pb-2">
-                            <span className="text-slate-400">Payment Terms</span>
-                            <span className="text-white">{report.commercialSummary?.paymentTerms || "N/A"}</span>
+                    <h4 className="text-lg font-bold text-white mb-3"><Scale className="w-5 h-5 inline mr-2 text-blue-400"/> Commercial Terms</h4>
+                    <ul className="space-y-3">
+                         <li className="flex justify-between border-b border-slate-800 pb-2">
+                            <span className="text-slate-400 text-sm">Payment Terms</span>
+                            <span className="text-white text-sm font-bold">{report.commercialSummary?.paymentTerms || "N/A"}</span>
                         </li>
                         <li className="flex justify-between border-b border-slate-800 pb-2">
-                            <span className="text-slate-400">Warranty</span>
-                            <span className="text-white">{report.commercialSummary?.warrantyPeriod || "N/A"}</span>
+                            <span className="text-slate-400 text-sm">Warranty</span>
+                            <span className="text-white text-sm font-bold">{report.commercialSummary?.warrantyPeriod || "N/A"}</span>
                         </li>
-                        <li className="flex justify-between">
-                            <span className="text-slate-400">Bid Validity</span>
-                            <span className="text-white">{report.commercialSummary?.validityPeriod || "N/A"}</span>
+                         <li className="flex justify-between">
+                            <span className="text-slate-400 text-sm">Validity</span>
+                            <span className="text-white text-sm font-bold">{report.commercialSummary?.validityPeriod || "N/A"}</span>
                         </li>
                     </ul>
                 </div>
                 <div className="p-5 bg-slate-900/50 rounded-xl border border-slate-700">
-                    <h4 className="text-md font-bold text-white mb-4 flex items-center"><FileCheck className="w-4 h-4 mr-2 text-purple-400"/> Mandatory Checklist</h4>
-                    <ul className="space-y-2 text-sm">
+                    <h4 className="text-lg font-bold text-white mb-3"><FileCheck className="w-5 h-5 inline mr-2 text-purple-400"/> Mandatory Checks</h4>
+                    <ul className="space-y-2">
                         {report.mandatoryChecklist?.map((item, i) => (
-                            <li key={i} className="flex items-center justify-between">
-                                <span className="text-slate-300">{item.item}</span>
+                             <li key={i} className="flex items-center justify-between p-2 bg-slate-800 rounded">
+                                <span className="text-sm text-slate-300">{item.item}</span>
                                 {item.status === 'PASS' ? 
-                                    <span className="px-2 py-0.5 rounded bg-green-900/50 text-green-400 text-xs font-bold">PASS</span> : 
-                                    <span className="px-2 py-0.5 rounded bg-red-900/50 text-red-400 text-xs font-bold">FAIL</span>
+                                    <span className="flex items-center text-xs font-bold text-green-400"><CheckCircle className="w-3 h-3 mr-1"/> PASS</span> : 
+                                    <span className="flex items-center text-xs font-bold text-red-400"><XCircle className="w-3 h-3 mr-1"/> FAIL</span>
                                 }
                             </li>
                         ))}
@@ -344,48 +383,26 @@ const ComplianceReport = ({ report }) => {
 
             {/* RED LINE ALERTS */}
             {report.redLineAlerts?.length > 0 && (
-                <div className="mb-10 p-5 bg-red-950/30 rounded-xl border border-red-600/50">
-                    <h4 className="text-lg font-bold text-red-400 mb-3 flex items-center"><Gavel className="w-5 h-5 mr-2"/> Critical Red Lines Detected</h4>
-                    <ul className="list-disc list-inside space-y-1">
-                        {report.redLineAlerts.map((alert, i) => (
-                            <li key={i} className="text-red-200 text-sm">{alert}</li>
-                        ))}
-                    </ul>
+                <div className="mb-10 p-5 bg-red-950/50 rounded-xl border border-red-600">
+                    <h4 className="text-lg font-bold text-red-400 mb-1"><Gavel className="w-6 h-6 inline mr-2"/> Critical Red Lines Detected</h4>
+                    <ul className="list-disc list-inside text-sm text-red-300">{report.redLineAlerts.map((r, i) => <li key={i}>{r}</li>)}</ul>
                 </div>
             )}
 
             {/* DETAILED FINDINGS */}
-            <h3 className="text-2xl font-bold text-white mb-6 border-b border-slate-700 pb-3">Compliance Gap Analysis</h3>
-            <div className="space-y-6">
-                {report.findings?.map((item, index) => (
-                    <div key={index} className="p-6 border border-slate-700 rounded-xl bg-slate-800 hover:bg-slate-700/50 transition">
-                        <div className="flex justify-between items-start mb-3">
-                            <span className={`px-3 py-1 text-xs font-bold rounded uppercase tracking-wider ${
-                                item.flag === 'COMPLIANT' ? 'bg-green-900 text-green-300' : 
-                                item.flag === 'PARTIAL' ? 'bg-amber-900 text-amber-300' : 'bg-red-900 text-red-300'
-                            }`}>{item.flag}</span>
-                            <span className="text-xs text-slate-500 uppercase">{item.category}</span>
+            <h3 className="text-2xl font-bold text-white mb-6 border-b border-slate-700 pb-3">Detailed Gap Analysis</h3>
+            <div className="space-y-8">
+                {findings.map((item, index) => (
+                    <div key={index} className="p-6 border border-slate-700 rounded-xl shadow-md space-y-3 bg-slate-800 hover:bg-slate-700/50 transition">
+                        <div className="flex justify-between items-start">
+                            <h3 className="text-xl font-bold text-white">#{index + 1}</h3>
+                            <div className={`px-4 py-1 text-sm font-semibold rounded-full border ${item.flag === 'COMPLIANT' ? 'bg-green-700/30 text-green-300 border-green-500' : item.flag === 'PARTIAL' ? 'bg-amber-700/30 text-amber-300 border-amber-500' : 'bg-red-700/30 text-red-300 border-red-500'}`}>{item.flag} ({item.complianceScore})</div>
                         </div>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            <div>
-                                <p className="text-xs text-slate-500 font-bold uppercase mb-1">Requirement (RFQ)</p>
-                                <p className="text-sm text-slate-300 italic bg-slate-900/50 p-3 rounded border border-slate-700">
-                                    "{item.requirementFromRFQ}"
-                                </p>
-                            </div>
-                            <div>
-                                <p className="text-xs text-slate-500 font-bold uppercase mb-1">Vendor Response</p>
-                                <p className="text-sm text-white">
-                                    {item.vendorResponse}
-                                </p>
-                            </div>
-                        </div>
-                        {item.flag !== 'COMPLIANT' && (
-                            <div className="mt-4 pt-4 border-t border-slate-700">
-                                <p className="text-xs text-blue-400 font-bold uppercase mb-1">Recommended Action</p>
-                                <p className="text-sm text-blue-100">{item.procurementAction}</p>
-                            </div>
-                        )}
+                        <p className="font-semibold text-slate-300 mt-2">RFQ Requirement:</p>
+                        <p className="p-4 bg-slate-900/80 text-slate-200 rounded-lg border border-slate-700 italic text-sm">{item.requirementFromRFQ || "Text not extracted by AI"}</p>
+                        <p className="font-semibold text-slate-300 mt-4">Vendor Response:</p>
+                        <p className="text-slate-400 text-sm">{item.vendorResponse}</p>
+                        {item.procurementAction && <div className="mt-4 p-4 bg-blue-900/40 border border-blue-700 rounded-xl"><p className="font-semibold text-blue-300">Auditor's Recommendation:</p><p className="text-blue-200 text-sm">{item.procurementAction}</p></div>}
                     </div>
                 ))}
             </div>
@@ -393,11 +410,90 @@ const ComplianceReport = ({ report }) => {
     );
 };
 
-// --- AUTH & PAGES ---
+const ComplianceRanking = ({ reportsHistory, loadReportFromHistory, deleteReport, currentUser }) => { 
+    if (reportsHistory.length === 0) return null;
+    // For Procurement, we rank by "Low Risk" (Score closer to 100 on Compliance is good, but maybe sort by Date is better for Procure. Let's stick to Compliance % for consistency)
+    const groupedReports = reportsHistory.reduce((acc, report) => {
+        const rfqName = report.projectTitle || report.rfqName || "Untitled Project";
+        const percentage = getCompliancePercentage(report); 
+        if (!acc[rfqName]) acc[rfqName] = { allReports: [], count: 0 };
+        acc[rfqName].allReports.push({ ...report, percentage });
+        acc[rfqName].count += 1;
+        return acc;
+    }, {});
+    const rankedProjects = Object.entries(groupedReports).filter(([_, data]) => data.allReports.length >= 1).sort(([nameA], [nameB]) => nameA.localeCompare(nameB));
+    
+    return (
+        <div className="mt-8">
+            <h2 className="text-xl font-bold text-white flex items-center mb-4 border-b border-slate-700 pb-2"><Layers className="w-5 h-5 mr-2 text-blue-400"/> Vendor Ranking by Project</h2>
+            <div className="space-y-6">
+                {rankedProjects.map(([rfqName, data]) => (
+                    <div key={rfqName} className="p-5 bg-slate-700/50 rounded-xl border border-slate-600 shadow-lg">
+                        <h3 className="text-lg font-extrabold text-blue-400 mb-4 border-b border-slate-600 pb-2">{rfqName} <span className="text-sm font-normal text-slate-400">({data.count} Vendors Evaluated)</span></h3>
+                        <div className="space-y-3">
+                            {data.allReports.sort((a, b) => b.percentage - a.percentage).map((report, idx) => (
+                                <div key={report.id} className="p-3 rounded-lg border border-slate-600 bg-slate-900/50 space-y-2 flex justify-between items-center hover:bg-slate-700/50">
+                                    <div className='flex items-center cursor-pointer' onClick={() => loadReportFromHistory(report)}>
+                                        <div className={`text-xl font-extrabold w-8 ${idx === 0 ? 'text-green-400' : 'text-slate-500'}`}>#{idx + 1}</div>
+                                        <div className='ml-3'>
+                                            <p className="text-sm font-medium text-white">{report.vendorName || "Unknown Vendor"}</p>
+                                            <p className="text-xs text-slate-400">{new Date(report.timestamp).toLocaleDateString()}</p>
+                                        </div>
+                                    </div>
+                                    <div className="flex items-center">
+                                        {currentUser && currentUser.role === 'ADMIN' && <button onClick={(e) => {e.stopPropagation(); deleteReport(report.id, report.rfqName, report.bidName, report.ownerId || currentUser.uid);}} className="mr-2 p-1 bg-red-600 rounded"><Trash2 className="w-4 h-4 text-white"/></button>}
+                                        <span className="px-2 py-0.5 rounded text-sm font-bold bg-blue-600 text-slate-900">{report.percentage}% Match</span>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+};
+
+const ReportHistory = ({ reportsHistory, loadReportFromHistory, isAuthReady, userId, setCurrentPage, currentUser, deleteReport, handleLogout }) => { 
+    if (!isAuthReady || !userId) return <div className="text-center text-red-400">Please login to view history.</div>;
+    return (
+        <div className="bg-slate-800 p-8 rounded-2xl shadow-2xl border border-slate-700">
+            <div className="flex justify-between items-center mb-6 border-b border-slate-700 pb-3">
+                <h2 className="text-xl font-bold text-white flex items-center"><Clock className="w-5 h-5 mr-2 text-blue-500"/> Saved Evaluation History ({reportsHistory.length})</h2>
+                <div className="flex gap-2">
+                    <button onClick={() => setCurrentPage(PAGE.COMPLIANCE_CHECK)} className="text-sm text-slate-400 hover:text-blue-500 flex items-center"><ArrowLeft className="w-4 h-4 mr-1"/> Back</button>
+                    <button onClick={handleLogout} className="text-sm text-slate-400 hover:text-red-400 flex items-center ml-4">Logout</button>
+                </div>
+            </div>
+            <ComplianceRanking reportsHistory={reportsHistory} loadReportFromHistory={loadReportFromHistory} deleteReport={deleteReport} currentUser={currentUser} />
+            <h3 className="text-lg font-bold text-white mt-8 mb-4 border-b border-slate-700 pb-2">All Evaluations</h3>
+            {reportsHistory.length === 0 ? <p className="text-slate-400 italic">No saved reports found.</p> : (
+                <div className="space-y-4">{reportsHistory.map(item => (
+                    <div key={item.id} className="flex justify-between items-center p-4 bg-slate-700/50 rounded-xl border border-slate-700 hover:bg-slate-700/80">
+                        <div className="mr-4">
+                            <p className="text-sm font-medium text-white">{item.projectTitle || "Project"} : {item.vendorName || "Vendor"}</p>
+                            <p className="text-xs text-slate-400">{new Date(item.timestamp).toLocaleDateString()}</p>
+                        </div>
+                        <div className='flex items-center space-x-2'>
+                            <button onClick={() => loadReportFromHistory(item)} className="px-4 py-2 text-xs rounded-lg bg-blue-500 text-white hover:bg-blue-400"><ArrowLeft className="w-3 h-3 inline mr-1 rotate-180"/> Load</button>
+                            {currentUser && currentUser.role === 'ADMIN' && <button onClick={(e) => {e.stopPropagation(); deleteReport(item.id, item.rfqName, item.bidName, item.ownerId || userId);}} className="px-4 py-2 text-xs rounded-lg bg-red-600 text-white hover:bg-red-500"><Trash2 className="w-3 h-3 inline"/></button>}
+                        </div>
+                    </div>
+                ))}</div>
+            )}
+        </div>
+    );
+};
+
+// --- PAGE COMPONENTS (AuthPage) ---
+// Kept styling EXACTLY like SmartBids, just text changes
 const AuthPage = ({ setCurrentPage, setErrorMessage, errorMessage, db, auth }) => {
     const [regForm, setRegForm] = useState({ name: '', designation: '', company: '', email: '', phone: '', password: '' });
     const [loginForm, setLoginForm] = useState({ email: '', password: '' });
     const [isSubmitting, setIsSubmitting] = useState(false);
+
+    const handleRegChange = (e) => setRegForm({ ...regForm, [e.target.name]: e.target.value });
+    const handleLoginChange = (e) => setLoginForm({ ...loginForm, [e.target.name]: e.target.value });
 
     const handleRegister = async (e) => {
         e.preventDefault();
@@ -415,21 +511,33 @@ const AuthPage = ({ setCurrentPage, setErrorMessage, errorMessage, db, auth }) =
                 company: regForm.company,
                 email: regForm.email,
                 phone: regForm.phone,
-                role: 'PROCURER', // Default role for this app
+                role: 'PROCURER', // ROLE CHANGE
                 createdAt: Date.now()
             });
+
+            // TRIGGER WELCOME EMAIL (Writing to 'mail' collection)
             await addDoc(collection(db, 'mail'), {
                 to: regForm.email,
                 message: {
                     subject: 'Welcome to SmartProcure – Start Evaluating Vendors',
-                    html: `<p>Hi ${regForm.name},</p><p>Welcome to <strong>SmartProcure</strong>. Your automated procurement assistant is ready.</p>`
+                    html: `
+                        <p>Hi ${regForm.name},</p>
+                        <p>Welcome to <strong>SmartProcure</strong>. Your automated AI procurement auditor is ready.</p>
+                        <p>You have 3 Free Vendor Evaluations.</p>
+                        <p>Get started by uploading your RFQ and a Vendor Proposal.</p>
+                    `
                 }
             });
+
             await signOut(auth);
             setLoginForm({ email: regForm.email, password: regForm.password });
-            setErrorMessage('SUCCESS: Account created! Verification email sent.');
-        } catch (err) { setErrorMessage(err.message); } 
-        finally { setIsSubmitting(false); }
+            setErrorMessage('SUCCESS: Registration complete! A verification email has been sent. Please verify before logging in.'); 
+        } catch (err) {
+            console.error('Registration error', err);
+            setErrorMessage(err.message || 'Registration failed.');
+        } finally {
+            setIsSubmitting(false);
+        }
     };
 
     const handleLogin = async (e) => {
@@ -438,88 +546,299 @@ const AuthPage = ({ setCurrentPage, setErrorMessage, errorMessage, db, auth }) =
         setIsSubmitting(true);
         try {
             await signInWithEmailAndPassword(auth, loginForm.email, loginForm.password);
-        } catch (err) { setErrorMessage(err.message); setIsSubmitting(false); }
+        } catch (err) {
+            console.error('Login error', err);
+            setErrorMessage(err.message || 'Login failed.');
+            setIsSubmitting(false);
+        }
     };
 
+    const isSuccess = errorMessage && errorMessage.includes('SUCCESS');
+
     return (
-        <div className="p-8 bg-slate-800 rounded-2xl shadow-2xl border border-slate-700 mt-12 mb-12">
+        <div className="p-8 bg-slate-800 rounded-2xl shadow-2xl shadow-black/50 border border-slate-700 mt-12 mb-12">
             <h2 className="text-3xl font-extrabold text-white text-center">SmartProcure</h2>
-            <p className="text-lg font-medium text-blue-400 text-center mb-6">AI-Powered Vendor Evaluation & Risk Analysis</p>
+            <p className="text-lg font-medium text-blue-400 text-center mb-6">AI-Driven Vendor Evaluation: Risk Less, Buy Smarter.</p>
+
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                <div className="p-6 bg-slate-700/50 rounded-xl border border-blue-500/50">
-                    <h3 className="text-2xl font-bold text-white mb-4">Procurement Registration</h3>
+                <div className="p-6 bg-slate-700/50 rounded-xl border border-blue-500/50 shadow-inner space-y-4">
+                    <h3 className="text-2xl font-bold text-blue-300 flex items-center mb-4"><UserPlus className="w-6 h-6 mr-2" /> Create Account</h3>
                     <form onSubmit={handleRegister} className="space-y-3">
-                        <FormInput name="name" label="Full Name" value={regForm.name} onChange={(e) => setRegForm({...regForm, name: e.target.value})} />
-                        <FormInput name="email" label="Work Email" value={regForm.email} onChange={(e) => setRegForm({...regForm, email: e.target.value})} type="email" />
-                        <FormInput name="password" label="Password" value={regForm.password} onChange={(e) => setRegForm({...regForm, password: e.target.value})} type="password" />
-                        <button disabled={isSubmitting} className="w-full py-3 mt-4 bg-blue-600 text-white font-bold rounded-xl">{isSubmitting ? 'Processing...' : 'Create Account'}</button>
+                        <FormInput id="reg-name" label="Full Name *" name="name" value={regForm.name} onChange={handleRegChange} type="text" />
+                        <FormInput id="reg-designation" label="Designation" name="designation" value={regForm.designation} onChange={handleRegChange} type="text" />
+                        <FormInput id="reg-company" label="Company" name="company" value={regForm.company} onChange={handleRegChange} type="text" />
+                        <FormInput id="reg-email" label="Email *" name="email" value={regForm.email} onChange={handleRegChange} type="email" />
+                        <FormInput id="reg-phone" label="Contact Number" name="phone" value={regForm.phone} onChange={handleRegChange} type="tel" placeholder="Optional" />
+                        <FormInput id="reg-password" label="Create Password *" name="password" value={regForm.password} onChange={handleRegChange} type="password" />
+
+                        <button type="submit" disabled={isSubmitting} className={`w-full py-3 text-lg font-semibold rounded-xl text-slate-900 transition-all shadow-lg mt-6 bg-blue-400 hover:bg-blue-300 disabled:opacity-50 flex items-center justify-center`}>
+                            {isSubmitting ? <Loader2 className="animate-spin h-5 w-5 mr-2" /> : <UserPlus className="h-5 w-5 mr-2" />}
+                            {isSubmitting ? 'Registering...' : 'Register'}
+                        </button>
+                        
+                        {/* Legal Disclaimer maintained */}
+                        <div className="mt-4 text-[10px] text-slate-500 text-center leading-tight">
+                            By registering, you agree to our Terms of Service and Privacy Policy.
+                        </div>
                     </form>
                 </div>
-                <div className="p-6 bg-slate-700/50 rounded-xl border border-green-500/50">
-                    <h3 className="text-2xl font-bold text-white mb-4">Procurer Login</h3>
-                    <form onSubmit={handleLogin} className="space-y-3">
-                        <FormInput name="email" label="Email" value={loginForm.email} onChange={(e) => setLoginForm({...loginForm, email: e.target.value})} type="email" />
-                        <FormInput name="password" label="Password" value={loginForm.password} onChange={(e) => setLoginForm({...loginForm, password: e.target.value})} type="password" />
-                        <button disabled={isSubmitting} className="w-full py-3 mt-4 bg-green-600 text-white font-bold rounded-xl">{isSubmitting ? 'Logging In...' : 'Login'}</button>
+
+                <div className="p-6 bg-slate-700/50 rounded-xl border border-green-500/50 shadow-inner flex flex-col justify-center">
+                    <h3 className="text-2xl font-bold text-green-300 flex items-center mb-4"><LogIn className="w-6 h-6 mr-2" /> Procurer Sign In</h3>
+                    <form onSubmit={handleLogin} className="space-y-4">
+                        <FormInput id="login-email" label="Email *" name="email" value={loginForm.email} onChange={handleLoginChange} type="email" />
+                        <FormInput id="login-password" label="Password *" name="password" value={loginForm.password} onChange={handleLoginChange} type="password" />
+
+                        <button type="submit" disabled={isSubmitting} className={`w-full py-3 text-lg font-semibold rounded-xl text-slate-900 transition-all shadow-lg mt-6 bg-green-400 hover:bg-green-300 disabled:opacity-50 flex items-center justify-center`}>
+                            {isSubmitting ? <Loader2 className="animate-spin h-5 w-5 mr-2" /> : <LogIn className="h-5 w-5 mr-2" />}
+                            {isSubmitting ? 'Signing in...' : 'Sign In'}
+                        </button>
                     </form>
-                    {errorMessage && <div className="mt-4 p-3 bg-red-900/50 text-red-200 rounded">{errorMessage}</div>}
+
+                    {errorMessage && (
+                        <div className={`mt-4 p-3 ${isSuccess ? 'bg-green-900/40 text-green-300 border-green-700' : 'bg-red-900/40 text-red-300 border-red-700'} border rounded-xl flex items-center`}>
+                            {isSuccess ? <CheckCircle className="w-5 h-5 mr-3"/> : <AlertTriangle className="w-5 h-5 mr-3"/>}
+                            <p className="text-sm font-medium">{errorMessage}</p>
+                        </div>
+                    )}
                 </div>
             </div>
         </div>
     );
 };
 
+const AdminDashboard = ({ setCurrentPage, currentUser, reportsHistory, loadReportFromHistory, handleLogout }) => {
+  const [userList, setUserList] = useState([]);
+  useEffect(() => {
+    getDocs(collection(getFirestore(), 'users')).then(snap => setUserList(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
+  }, []);
+  
+  // Reuse export logic but with simplified data for now
+  const exportToCSV = (data, filename) => {
+    const csvContent = "data:text/csv;charset=utf-8," + Object.keys(data[0]).join(",") + "\n" + data.map(e => Object.values(e).map(v => `"${v}"`).join(",")).join("\n");
+    const link = document.createElement("a"); link.href = encodeURI(csvContent); link.download = filename; document.body.appendChild(link); link.click(); document.body.removeChild(link);
+  };
+
+  return (
+    <div id="admin-print-area" className="bg-slate-800 p-8 rounded-2xl shadow-2xl border border-slate-700 space-y-8">
+      <div className="flex justify-between items-center border-b border-slate-700 pb-4">
+        <h2 className="text-3xl font-bold text-white flex items-center"><Shield className="w-8 h-8 mr-3 text-red-400" /> Admin Market Intel (Procurement)</h2>
+        <div className="flex space-x-3 no-print">
+            <button onClick={() => window.print()} className="text-sm text-slate-400 hover:text-white bg-slate-700 px-3 py-2 rounded-lg"><Printer className="w-4 h-4 mr-2" /> Print</button>
+            <button onClick={handleLogout} className="text-sm text-slate-400 hover:text-blue-500 flex items-center"><ArrowLeft className="w-4 h-4 mr-1" /> Logout</button>
+        </div>
+      </div>
+      
+      {/* List of recent audits */}
+      <div className="pt-4 border-t border-slate-700">
+        <h3 className="text-xl font-bold text-white mb-4 flex items-center"><Eye className="w-6 h-6 mr-2 text-blue-400" /> Recent Vendor Audits</h3>
+        <div className="space-y-4">{reportsHistory.slice(0, 15).map(item => (
+            <div key={item.id} className="p-4 bg-slate-900/50 rounded-xl border border-slate-700 cursor-default hover:bg-slate-900">
+                <div className="flex justify-between mb-2">
+                    <div>
+                        <h4 className="text-lg font-bold text-white">{item.projectTitle || "Project"} <span className="text-sm text-slate-400">vs {item.vendorName || "Vendor"}</span></h4>
+                    </div>
+                    <div className="text-right"><div className="text-xl font-bold text-blue-400">{getCompliancePercentage(item)}% Match</div></div>
+                </div>
+            </div>
+        ))}</div>
+      </div>
+    </div>
+  );
+};
+
+const AuditPage = ({ title, handleAnalyze, usageLimits, setCurrentPage, currentUser, loading, RFQFile, BidFile, setRFQFile, setBidFile, errorMessage, report, saveReport, saving, setErrorMessage, userId, handleLogout }) => {
+    return (
+        <>
+            <div className="bg-slate-800 p-8 rounded-2xl shadow-2xl border border-slate-700">
+                <div className="flex justify-between items-center mb-6 border-b border-slate-700 pb-3">
+                    <h2 className="text-2xl font-bold text-white">{title}</h2>
+                    <div className="text-right">
+                        {currentUser?.role === 'ADMIN' ? (
+                            <p className="text-xs text-green-400 font-bold">Admin Mode</p>
+                        ) : usageLimits.isSubscribed ? (
+                            <div className="flex flex-col items-end space-y-1">
+                                <div className="px-3 py-1 rounded-full bg-blue-500/20 border border-blue-500 text-blue-400 text-xs font-bold inline-flex items-center">
+                                    <Award className="w-3 h-3 mr-1" /> Status: SmartProcure Pro
+                                </div>
+                                <button 
+                                    onClick={async () => {
+                                        try {
+                                            const res = await fetch('/api/create-portal-session', {
+                                                method: 'POST',
+                                                headers: { 'Content-Type': 'application/json' },
+                                                body: JSON.stringify({ userId })
+                                            });
+                                            const data = await res.json();
+                                            if (data.url) window.location.href = data.url;
+                                            else alert("Error: " + data.error);
+                                        } catch (e) { alert("Connection failed."); }
+                                    }}
+                                    className="text-xs text-slate-400 hover:text-red-400 flex items-center transition-colors underline decoration-dotted"
+                                >
+                                    Manage Subscription
+                                </button>
+                            </div>
+                        ) : (
+                            <p className="text-xs text-slate-400">
+                                Credits: <span className={usageLimits.bidderChecks >= MAX_FREE_AUDITS ? "text-red-500" : "text-green-500"}>
+                                    {usageLimits.bidderChecks}/{MAX_FREE_AUDITS}
+                                </span>
+                            </p>
+                        )}
+                        <button onClick={handleLogout} className="text-sm text-slate-400 hover:text-blue-500 block ml-auto mt-1">Logout</button>
+                    </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                    <FileUploader title="Internal RFQ / Tender" file={RFQFile} setFile={(e) => handleFileChange(e, setRFQFile, setErrorMessage)} color="blue" requiredText="Your Requirements" />
+                    <FileUploader title="Vendor Proposal" file={BidFile} setFile={(e) => handleFileChange(e, setBidFile, setErrorMessage)} color="purple" requiredText="The Bid to Audit" />
+                </div>
+                
+                {errorMessage && <div className="mt-6 p-4 bg-red-900/40 text-red-300 border border-red-700 rounded-xl flex items-center"><AlertTriangle className="w-5 h-5 mr-3"/>{errorMessage}</div>}
+                
+                <button onClick={() => handleAnalyze('PROCURER')} disabled={loading || !RFQFile || !BidFile} className="mt-8 w-full flex items-center justify-center px-8 py-4 text-lg font-semibold rounded-xl text-white bg-blue-600 hover:bg-blue-500 disabled:opacity-50">
+                    {loading ? <Loader2 className="animate-spin h-6 w-6 mr-3" /> : <Search className="h-6 w-6 mr-3" />} {loading ? 'AUDITING VENDOR...' : 'EVALUATE VENDOR PROPOSAL'}
+                </button>
+                
+                {report && userId && <button onClick={() => saveReport('PROCURER')} disabled={saving} className="mt-4 w-full flex items-center justify-center px-8 py-3 text-md font-semibold rounded-xl text-white bg-slate-600 hover:bg-slate-500 disabled:opacity-50"><Save className="h-5 w-5 mr-2" /> {saving ? 'SAVING...' : 'SAVE REPORT'}</button>}
+                {(report || userId) && <button onClick={() => setCurrentPage(PAGE.HISTORY)} className="mt-2 w-full flex items-center justify-center px-8 py-3 text-md font-semibold rounded-xl text-white bg-slate-700/80 hover:bg-slate-700"><List className="h-5 w-5 mr-2" /> VIEW HISTORY</button>}
+            </div>
+            {report && <ComplianceReport report={report} />}
+        </>
+    );
+};
+
 // --- APP COMPONENT ---
 const App = () => {
     const [currentPage, setCurrentPage] = useState(PAGE.HOME);
+    const [errorMessage, setErrorMessage] = useState(null);
+    const [isAuthReady, setIsAuthReady] = useState(false);
     const [currentUser, setCurrentUser] = useState(null);
     const [userId, setUserId] = useState(null);
     const [usageLimits, setUsageLimits] = useState({ initiatorChecks: 0, bidderChecks: 0, isSubscribed: false });
+    const [reportsHistory, setReportsHistory] = useState([]);
+    const [showPaywall, setShowPaywall] = useState(false);
+    
     const [RFQFile, setRFQFile] = useState(null);
     const [BidFile, setBidFile] = useState(null);
     const [report, setReport] = useState(null);
     const [loading, setLoading] = useState(false);
-    const [errorMessage, setErrorMessage] = useState(null);
+    const [saving, setSaving] = useState(false);
+
+    const handleLogout = async () => {
+        await signOut(auth);
+        setUserId(null); setCurrentUser(null); setReportsHistory([]); setReport(null); setRFQFile(null); setBidFile(null);
+        setUsageLimits({ initiatorChecks: 0, bidderChecks: 0, isSubscribed: false });
+        setCurrentPage(PAGE.HOME); setErrorMessage(null);
+    };
 
     useEffect(() => {
+        if (!auth) return;
         const unsubscribe = onAuthStateChanged(auth, async (user) => {
             if (user) {
                 setUserId(user.uid);
-                setCurrentUser({ uid: user.uid });
-                setCurrentPage(PAGE.COMPLIANCE_CHECK);
+                try {
+                    const userDoc = await getDoc(doc(db, 'users', user.uid));
+                    const userData = userDoc.exists() ? userDoc.data() : { role: 'PROCURER' };
+                    setCurrentUser({ uid: user.uid, ...userData });
+                    if (userData.role === 'ADMIN') setCurrentPage(PAGE.ADMIN);
+                    else setCurrentPage(PAGE.COMPLIANCE_CHECK);
+                } catch (error) { setCurrentUser({ uid: user.uid, role: 'PROCURER' }); setCurrentPage(PAGE.COMPLIANCE_CHECK); }
             } else {
-                setUserId(null); setCurrentUser(null); setCurrentPage(PAGE.HOME);
+                setUserId(null); setCurrentUser(null); setReportsHistory([]); setReport(null); setCurrentPage(PAGE.HOME);
             }
+            setIsAuthReady(true);
         });
         return () => unsubscribe();
     }, []);
 
-    // USAGE LISTENER
     useEffect(() => {
         if (db && userId) {
             const docRef = getUsageDocRef(db, userId);
-            const unsub = onSnapshot(docRef, (doc) => {
-                if (doc.exists()) setUsageLimits({ bidderChecks: doc.data().bidderChecks || 0, isSubscribed: doc.data().isSubscribed || false });
-                else setDoc(docRef, { bidderChecks: 0, isSubscribed: false });
+            const unsubscribe = onSnapshot(docRef, (docSnap) => {
+                if (docSnap.exists()) {
+                    setUsageLimits({ bidderChecks: docSnap.data().bidderChecks || 0, isSubscribed: docSnap.data().isSubscribed || false });
+                } else {
+                    setDoc(docRef, { bidderChecks: 0, isSubscribed: false }).catch(console.error);
+                }
             });
-            return () => unsub();
+            return () => unsubscribe();
         }
     }, [userId]);
 
-    const handleAnalyze = useCallback(async () => {
-        if (!usageLimits.isSubscribed && usageLimits.bidderChecks >= MAX_FREE_AUDITS) { 
-            // Trigger Paywall
-            // Logic to show modal would go here, or we trust the UI to block the button
-             alert("Limit Reached"); return; 
+    useEffect(() => {
+        if (!db || !currentUser) return;
+        let unsubscribeSnapshot = null;
+        let q;
+        if (currentUser.role === 'ADMIN') { q = query(collectionGroup(db, 'compliance_reports')); } 
+        else if (userId) { q = query(getReportsCollectionRef(db, userId)); }
+        
+        if (q) {
+            unsubscribeSnapshot = onSnapshot(q, (snapshot) => {
+                const history = [];
+                snapshot.forEach(docSnap => {
+                    const ownerId = docSnap.ref.parent.parent ? docSnap.ref.parent.parent.id : userId;
+                    history.push({ id: docSnap.id, ownerId: ownerId, ...docSnap.data() });
+                });
+                history.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+                setReportsHistory(history);
+            });
         }
-        if (!RFQFile || !BidFile) { setErrorMessage("Upload both documents."); return; }
+        return () => unsubscribeSnapshot && unsubscribeSnapshot();
+    }, [userId, currentUser]);
+
+    useEffect(() => {
+        const loadScript = (src) => {
+            return new Promise((resolve, reject) => {
+                if (document.querySelector(`script[src="${src}"]`)) { resolve(); return; }
+                const script = document.createElement('script');
+                script.src = src; script.onload = resolve; script.onerror = () => reject();
+                document.head.appendChild(script);
+            });
+        };
+        const loadAllLibraries = async () => {
+            try {
+                if (!window.pdfjsLib) await loadScript("https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js");
+                if (window.pdfjsLib && !window.pdfjsLib.GlobalWorkerOptions.workerSrc) window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
+                if (!window.mammoth) await loadScript("https://cdnjs.cloudflare.com/ajax/libs/mammoth.js/1.4.15/mammoth.browser.min.js");
+            } catch (e) { console.warn("Doc parsing libs warning:", e); }
+        };
+        loadAllLibraries();
+        
+        const params = new URLSearchParams(window.location.search);
+        if (params.get('client_reference_id') || params.get('payment_success')) {
+             window.history.replaceState({}, document.title, "/");
+        }
+    }, []); 
+
+    const incrementUsage = async () => {
+        if (!db || !userId) return;
+        const docRef = getUsageDocRef(db, userId);
+        try {
+            await runTransaction(db, async (transaction) => {
+                const docSnap = await transaction.get(docRef);
+                const currentData = docSnap.exists() ? docSnap.data() : { bidderChecks: 0, isSubscribed: false };
+                if (!docSnap.exists()) transaction.set(docRef, currentData);
+                transaction.update(docRef, { bidderChecks: (currentData.bidderChecks || 0) + 1 });
+            });
+        } catch (e) { console.error("Usage update failed:", e); }
+    };
+
+    const handleAnalyze = useCallback(async (role) => {
+        if (currentUser?.role !== 'ADMIN' && !usageLimits.isSubscribed && usageLimits.bidderChecks >= MAX_FREE_AUDITS) {
+            setShowPaywall(true);
+            return;
+        }
+        if (!RFQFile || !BidFile) { setErrorMessage("Please upload both documents."); return; }
+        
         setLoading(true); setReport(null); setErrorMessage(null);
 
         try {
-            const rfqText = await processFile(RFQFile);
-            const bidText = await processFile(BidFile);
-
-            // --- PROCUREMENT AUDITOR PROMPT ---
+            const rfqContent = await processFile(RFQFile);
+            const bidContent = await processFile(BidFile);
+            
+            // --- SMARTPROCURE SYSTEM PROMPT ---
             const systemPrompt = {
                 parts: [{
                     text: `You are the SmartProcure AI Auditor. 
@@ -541,81 +860,144 @@ const App = () => {
                 }]
             };
 
-            const userQuery = `<rfq_document>${rfqText}</rfq_document><bid_document>${bidText}</bid_document> Perform Procurement Audit.`;
+            const userQuery = `
+                <rfq_document>
+                ${rfqContent}
+                </rfq_document>
+
+                <bid_document>
+                ${bidContent}
+                </bid_document>
+                
+                Perform Procurement Audit.
+            `;
 
             const payload = {
                 contents: [{ parts: [{ text: userQuery }] }],
                 systemInstruction: systemPrompt,
-                generationConfig: { responseMimeType: "application/json", responseSchema: COMPREHENSIVE_REPORT_SCHEMA }
+                generationConfig: { 
+                    responseMimeType: "application/json", 
+                    responseSchema: COMPREHENSIVE_REPORT_SCHEMA 
+                }
             };
 
             const response = await fetchWithRetry(API_URL, {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
             });
-            const data = await response.json();
-            const jsonText = data.candidates?.[0]?.content?.parts?.[0]?.text;
             
+            const result = await response.json();
+            const jsonText = result.candidates?.[0]?.content?.parts?.[0]?.text;
+
             if (jsonText) {
                 setReport(JSON.parse(jsonText));
-                // Increment Usage
-                await runTransaction(db, async (t) => {
-                    const ref = getUsageDocRef(db, userId);
-                    const doc = await t.get(ref);
-                    const newCount = (doc.data()?.bidderChecks || 0) + 1;
-                    t.update(ref, { bidderChecks: newCount });
-                });
-            } else { throw new Error("AI Analysis Failed"); }
+                await incrementUsage();
+            } else { 
+                throw new Error("AI returned invalid data."); 
+            }
 
-        } catch (e) { setErrorMessage(e.message); } 
-        finally { setLoading(false); }
-    }, [RFQFile, BidFile, usageLimits, userId]);
+        } catch (error) {
+            setErrorMessage(`Analysis failed: ${error.message}`);
+        } finally { 
+            setLoading(false); 
+        }
+    }, [RFQFile, BidFile, usageLimits, currentUser]);
 
+    const saveReport = useCallback(async (role) => {
+        if (!db || !userId || !report) { setErrorMessage("No report to save."); return; }
+        setSaving(true);
+        try {
+            const reportsRef = getReportsCollectionRef(db, userId);
+            await addDoc(reportsRef, {
+                ...report,
+                projectTitle: report.projectTitle || 'Untitled',
+                vendorName: report.vendorName || 'Unknown Vendor',
+                timestamp: Date.now(),
+                role: role, 
+                ownerId: userId 
+            });
+            setErrorMessage("Evaluation saved successfully!"); 
+            setTimeout(() => setErrorMessage(null), 3000);
+        } catch (error) {
+            setErrorMessage(`Failed to save: ${error.message}.`);
+        } finally { setSaving(false); }
+    }, [db, userId, report, RFQFile, BidFile]);
+    
+    const deleteReport = useCallback(async (reportId, rfqName, bidName) => {
+        if (!db || !userId) return;
+        setErrorMessage(`Deleting...`);
+        try {
+            const reportsRef = getReportsCollectionRef(db, userId);
+            await deleteDoc(doc(reportsRef, reportId));
+            if (report && report.id === reportId) setReport(null);
+            setErrorMessage("Deleted!");
+            setTimeout(() => setErrorMessage(null), 3000);
+        } catch (error) { setErrorMessage(`Delete failed: ${error.message}`); }
+    }, [db, userId, report]);
+
+    const loadReportFromHistory = useCallback((historyItem) => {
+        setRFQFile(null); setBidFile(null);
+        setReport({ id: historyItem.id, ...historyItem });
+        setCurrentPage(PAGE.COMPLIANCE_CHECK); 
+        setErrorMessage(`Loaded: ${historyItem.projectTitle}`);
+        setTimeout(() => setErrorMessage(null), 3000);
+    }, []);
+    
     const renderPage = () => {
-        if (currentPage === PAGE.HOME) return <AuthPage setCurrentPage={setCurrentPage} setErrorMessage={setErrorMessage} errorMessage={errorMessage} db={db} auth={auth} />;
-        return (
-            <div className="bg-slate-800 p-8 rounded-2xl shadow-2xl border border-slate-700">
-                <div className="flex justify-between items-center mb-6 pb-4 border-b border-slate-700">
-                    <h2 className="text-2xl font-bold text-white flex items-center"><Scale className="mr-3 text-blue-400"/> Vendor Evaluation</h2>
-                    <div className="text-right">
-                        {!usageLimits.isSubscribed && (
-                            <p className="text-xs text-slate-400 mb-1">
-                                Credits: <span className={usageLimits.bidderChecks >= MAX_FREE_AUDITS ? "text-red-500" : "text-green-500"}>{usageLimits.bidderChecks}/{MAX_FREE_AUDITS}</span>
-                            </p>
-                        )}
-                        <button onClick={async () => await signOut(auth)} className="text-sm text-slate-400 hover:text-white">Logout</button>
-                    </div>
-                </div>
-                
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
-                    <FileUploader title="Internal RFQ / Tender" file={RFQFile} setFile={(e) => handleFileChange(e, setRFQFile, setErrorMessage)} color="blue" requiredText="Your Requirements" />
-                    <FileUploader title="Vendor Proposal" file={BidFile} setFile={(e) => handleFileChange(e, setBidFile, setErrorMessage)} color="purple" requiredText="The Bid to Audit" />
-                </div>
-
-                {errorMessage && <div className="p-4 bg-red-900/50 text-red-200 rounded mb-4">{errorMessage}</div>}
-
-                <button onClick={handleAnalyze} disabled={loading || !RFQFile || !BidFile} className="w-full py-4 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl flex items-center justify-center">
-                    {loading ? <Loader2 className="animate-spin mr-2"/> : <Search className="mr-2"/>} {loading ? "AUDITING PROPOSAL..." : "EVALUATE VENDOR"}
-                </button>
-
-                {report && <ComplianceReport report={report} />}
-                
-                {/* PAYWALL MODAL TRIGGER */}
-                <PaywallModal 
-                    show={!usageLimits.isSubscribed && usageLimits.bidderChecks >= MAX_FREE_AUDITS} 
-                    onClose={() => {}} 
-                    userId={userId} 
-                />
-            </div>
-        );
+        switch (currentPage) {
+            case PAGE.HOME:
+                return <AuthPage setCurrentPage={setCurrentPage} setErrorMessage={setErrorMessage} errorMessage={errorMessage} db={db} auth={auth} />;
+            case PAGE.COMPLIANCE_CHECK:
+                return <AuditPage 
+                    title="Vendor Evaluation & Risk Audit" rfqTitle="RFQ" bidTitle="Proposal" role="PROCURER"
+                    handleAnalyze={handleAnalyze} usageLimits={usageLimits} setCurrentPage={setCurrentPage}
+                    currentUser={currentUser} loading={loading} RFQFile={RFQFile} BidFile={BidFile}
+                    setRFQFile={setRFQFile} setBidFile={setBidFile} 
+                    errorMessage={errorMessage} report={report} saveReport={saveReport} saving={saving}
+                    setErrorMessage={setErrorMessage} userId={userId} handleLogout={handleLogout}
+                />;
+            case PAGE.ADMIN:
+                return <AdminDashboard setCurrentPage={setCurrentPage} currentUser={currentUser} reportsHistory={reportsHistory} loadReportFromHistory={loadReportFromHistory} handleLogout={handleLogout} />;
+            case PAGE.HISTORY:
+                return <ReportHistory reportsHistory={reportsHistory} loadReportFromHistory={loadReportFromHistory} deleteReport={deleteReport} isAuthReady={isAuthReady} userId={userId} setCurrentPage={setCurrentPage} currentUser={currentUser} handleLogout={handleLogout} />;
+            default: return <AuthPage setCurrentPage={setCurrentPage} setErrorMessage={setErrorMessage} errorMessage={errorMessage} db={db} auth={auth} />;
+        }
     };
 
     return (
-        <div className="min-h-screen bg-slate-900 font-body p-8 text-slate-100 max-w-5xl mx-auto">
-            <style>{`@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap'); .font-body { font-family: 'Inter', sans-serif; }`}</style>
-            {renderPage()}
+        <div className="min-h-screen bg-slate-900 font-body p-4 sm:p-8 text-slate-100">
+            <style>{`
+                @import url('https://fonts.googleapis.com/css2?family=Lexend:wght@100..900&display=swap');
+                .font-body, .font-body * { font-family: 'Lexend', sans-serif !important; }
+                input[type="file"] { display: block; width: 100%; }
+                input[type="file"]::file-selector-button { background-color: #3b82f6; color: white; border: none; padding: 10px 20px; border-radius: 10px; cursor: pointer; font-weight: 600; }
+                .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+                .custom-scrollbar::-webkit-scrollbar-thumb { background-color: #475569; border-radius: 3px; }
+                @media print { 
+                    body * { visibility: hidden; } 
+                    #admin-print-area, #admin-print-area * { visibility: visible; } 
+                    #admin-print-area { position: absolute; left: 0; top: 0; width: 100%; background: white; color: black; } 
+                    #printable-compliance-report, #printable-compliance-report * { visibility: visible; }
+                    #printable-compliance-report { position: absolute; left: 0; top: 0; width: 100%; background: white; color: black; }
+                    .no-print { display: none !important; } 
+                }
+            `}</style>
+            <div className="max-w-4xl mx-auto space-y-10">{renderPage()}</div>
+            <PaywallModal show={showPaywall} onClose={() => setShowPaywall(false)} userId={userId} />
         </div>
     );
 };
 
-export default App;
+// --- TOP LEVEL EXPORT ---
+const MainApp = App;
+
+function TopLevelApp() {
+    return (
+        <ErrorBoundary>
+            <MainApp />
+        </ErrorBoundary>
+    );
+}
+
+export default TopLevelApp;
