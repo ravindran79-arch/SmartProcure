@@ -579,8 +579,26 @@ const AuthPage = ({ setCurrentPage, setErrorMessage, errorMessage, db, auth }) =
                             {isSubmitting ? 'Registering...' : 'Register'}
                         </button>
                         
+                        {/* --- LEGAL DISCLAIMER WITH LINKS --- */}
                         <div className="mt-4 text-[10px] text-slate-500 text-center leading-tight">
-                            By registering, you agree to our Terms of Service and Privacy Policy.
+                            By registering, you agree to our{' '}
+                            <a 
+                                href="/terms-of-service.pdf" 
+                                target="_blank" 
+                                rel="noopener noreferrer" 
+                                className="text-blue-400 hover:text-blue-300 hover:underline transition-colors"
+                            >
+                                Terms of Service
+                            </a>
+                            {' '}and{' '}
+                            <a 
+                                href="/privacy-policy.pdf" 
+                                target="_blank" 
+                                rel="noopener noreferrer" 
+                                className="text-blue-400 hover:text-blue-300 hover:underline transition-colors"
+                            >
+                                Privacy Policy
+                            </a>.
                         </div>
                     </form>
                 </div>
