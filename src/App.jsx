@@ -35,7 +35,7 @@ const db = getFirestore(app);
 // --- CONSTANTS ---
 const API_URL = '/api/analyze'; 
 
-// UPDATED: Procurement Categories
+// Procurement Categories
 const CATEGORY_ENUM = ["MANDATORY", "COMMERCIAL", "TECHNICAL", "LEGAL", "HSE/QUALITY", "TIMELINE", "OTHER"];
 const MAX_FREE_AUDITS = 3; 
 
@@ -46,16 +46,27 @@ const PAGE = {
     HISTORY: 'HISTORY' 
 };
 
-// --- SMARTPROCURE JSON SCHEMA ---
+// --- SMARTPROCURE JSON SCHEMA (UPDATED FOR GOD VIEW INTEL) ---
 const COMPREHENSIVE_REPORT_SCHEMA = {
     type: "OBJECT",
-    description: "Procurement Audit Report analyzing Vendor Proposal against RFQ.",
+    description: "Procurement Audit Report analyzing Vendor Proposal against RFQ with Market Intelligence extraction.",
     properties: {
         // --- HEADER DATA ---
         "projectTitle": { "type": "STRING", "description": "Project Name from RFQ." },
         "vendorName": { "type": "STRING", "description": "Name of the Vendor/Bidder." },
         "totalBidValue": { "type": "STRING", "description": "Total Cost of Ownership (TCO) proposed." },
         
+        // --- MARKET INTEL (NEW FOR GOD VIEW) ---
+        "marketIntel": {
+            "type": "OBJECT",
+            "properties": {
+                "location": { "type": "STRING", "description": "Project location/site mentioned in RFQ (e.g., 'Miri, Sarawak', 'Global', 'Texas')." },
+                "duration": { "type": "STRING", "description": "Intended contract duration (e.g., '3 Years', '6 Months')." },
+                "industry": { "type": "STRING", "description": "Industry sector inferred from content (e.g., 'Oil & Gas', 'IT SaaS', 'Construction')." },
+                "currency": { "type": "STRING", "description": "Currency code (e.g., USD, MYR)." }
+            }
+        },
+
         // --- COMMERCIAL DATA ---
         "commercialSummary": {
             "type": "OBJECT",
@@ -114,7 +125,7 @@ const COMPREHENSIVE_REPORT_SCHEMA = {
             }
         }
     },
-    "required": ["projectTitle", "vendorName", "totalBidValue", "riskScore", "riskLevel", "commercialSummary", "redLineAlerts", "mandatoryChecklist", "executiveSummary", "findings"]
+    "required": ["projectTitle", "vendorName", "totalBidValue", "marketIntel", "riskScore", "riskLevel", "commercialSummary", "redLineAlerts", "mandatoryChecklist", "executiveSummary", "findings"]
 };
 
 // --- UTILS ---
@@ -139,7 +150,6 @@ const getCompliancePercentage = (report) => {
     const findings = report.findings || []; 
     const totalScore = findings.reduce((sum, item) => {
         let score = item.complianceScore || 0;
-        // Check for runaway AI values (just in case), but primarily trust the 0/0.5/1 logic
         if (score > 1) { score = score / 100; }
         return sum + score;
     }, 0);
@@ -457,7 +467,7 @@ const ComplianceRanking = ({ reportsHistory, loadReportFromHistory, deleteReport
     );
 };
 
-const ReportHistory = ({ reportsHistory, loadReportFromHistory, isAuthReady, userId, setCurrentPage, currentUser, deleteReport, handleLogout }) => { 
+const ReportHistory = ({ reportsHistory, loadReportFromHistory, deleteReport, isAuthReady, userId, setCurrentPage, currentUser, handleLogout }) => { 
     if (!isAuthReady || !userId) return <div className="text-center text-red-400">Please login to view history.</div>;
     return (
         <div className="bg-slate-800 p-8 rounded-2xl shadow-2xl border border-slate-700">
@@ -489,7 +499,7 @@ const ReportHistory = ({ reportsHistory, loadReportFromHistory, isAuthReady, use
 };
 
 // --- PAGE COMPONENTS (AuthPage) ---
-// UPDATED: Added isRegisteringRef prop to handle flow
+// UPDATED: Added System Admin Auto-Detection for ravindran.79@gmail.com
 const AuthPage = ({ setCurrentPage, setErrorMessage, errorMessage, db, auth, isRegisteringRef }) => {
     const [regForm, setRegForm] = useState({ name: '', designation: '', company: '', email: '', phone: '', password: '' });
     const [loginForm, setLoginForm] = useState({ email: '', password: '' });
@@ -512,20 +522,22 @@ const AuthPage = ({ setCurrentPage, setErrorMessage, errorMessage, db, auth, isR
             // --- EMAIL VERIFICATION ---
             await sendEmailVerification(userCred.user);
             
+            // --- AUTO-DETECT SYSTEM ADMIN ---
+            const isAdmin = regForm.email.toLowerCase() === 'ravindran.79@gmail.com';
+
             // --- WRITE USER PROFILE ---
             await setDoc(doc(db, 'users', userCred.user.uid), {
                 name: regForm.name,
-                designation: regForm.designation,
-                company: regForm.company,
+                // If Admin email, force designation and company
+                designation: isAdmin ? 'System Administrator' : regForm.designation,
+                company: isAdmin ? 'Ronav-AI' : regForm.company,
                 email: regForm.email,
                 phone: regForm.phone,
-                role: 'PROCURER', 
+                role: isAdmin ? 'ADMIN' : 'PROCURER', // Auto-set Admin role
                 createdAt: Date.now()
             });
 
             // --- WELCOME EMAIL (ISOLATED IN TRY/CATCH) ---
-            // If Firestore rules for 'mail' collection are missing, this fails silently 
-            // instead of blocking the whole registration.
             try {
                 await addDoc(collection(db, 'mail'), {
                     to: regForm.email,
@@ -594,26 +606,11 @@ const AuthPage = ({ setCurrentPage, setErrorMessage, errorMessage, db, auth, isR
                             {isSubmitting ? 'Registering...' : 'Register'}
                         </button>
                         
-                        {/* --- LEGAL DISCLAIMER WITH LINKS --- */}
                         <div className="mt-4 text-[10px] text-slate-500 text-center leading-tight">
                             By registering, you agree to our{' '}
-                            <a 
-                                href="/terms-of-service.pdf" 
-                                target="_blank" 
-                                rel="noopener noreferrer" 
-                                className="text-blue-400 hover:text-blue-300 hover:underline transition-colors"
-                            >
-                                Terms of Service
-                            </a>
+                            <a href="/terms-of-service.pdf" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300 hover:underline transition-colors">Terms of Service</a>
                             {' '}and{' '}
-                            <a 
-                                href="/privacy-policy.pdf" 
-                                target="_blank" 
-                                rel="noopener noreferrer" 
-                                className="text-blue-400 hover:text-blue-300 hover:underline transition-colors"
-                            >
-                                Privacy Policy
-                            </a>.
+                            <a href="/privacy-policy.pdf" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300 hover:underline transition-colors">Privacy Policy</a>.
                         </div>
                     </form>
                 </div>
@@ -642,40 +639,178 @@ const AuthPage = ({ setCurrentPage, setErrorMessage, errorMessage, db, auth, isR
     );
 };
 
+// --- UPDATED ADMIN DASHBOARD (GOD VIEW) ---
 const AdminDashboard = ({ setCurrentPage, currentUser, reportsHistory, loadReportFromHistory, handleLogout }) => {
   const [userList, setUserList] = useState([]);
+  const [activeTab, setActiveTab] = useState('PROJECT_GOD_VIEW'); // 'PROJECT_GOD_VIEW' or 'USER_GOD_VIEW'
+
   useEffect(() => {
-    getDocs(collection(getFirestore(), 'users')).then(snap => setUserList(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
+    // Fetch all users to map IDs to Names and populate User God View
+    getDocs(collection(getFirestore(), 'users')).then(snap => {
+        const users = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        setUserList(users);
+    });
   }, []);
-  
-  const exportToCSV = (data, filename) => {
-    const csvContent = "data:text/csv;charset=utf-8," + Object.keys(data[0]).join(",") + "\n" + data.map(e => Object.values(e).map(v => `"${v}"`).join(",")).join("\n");
-    const link = document.createElement("a"); link.href = encodeURI(csvContent); link.download = filename; document.body.appendChild(link); link.click(); document.body.removeChild(link);
+
+  // Helper: Find user details by Owner ID for the Project View
+  const getUserDetails = (uid) => {
+      const user = userList.find(u => u.id === uid);
+      return user ? user : { name: 'Unknown', company: 'Unknown', email: 'N/A' };
+  };
+
+  // Helper: Get project count for the User View
+  const getProjectCountForUser = (uid) => {
+      return reportsHistory.filter(r => r.ownerId === uid).length;
+  };
+
+  // Helper: Get list of project titles for the User View
+  const getProjectsForUser = (uid) => {
+      const projects = reportsHistory.filter(r => r.ownerId === uid).map(r => r.projectTitle || "Untitled");
+      return [...new Set(projects)].join(", "); // Unique titles only
   };
 
   return (
-    <div id="admin-print-area" className="bg-slate-800 p-8 rounded-2xl shadow-2xl border border-slate-700 space-y-8">
-      <div className="flex justify-between items-center border-b border-slate-700 pb-4">
-        <h2 className="text-3xl font-bold text-white flex items-center"><Shield className="w-8 h-8 mr-3 text-red-400" /> Admin Market Intel (Procurement)</h2>
-        <div className="flex space-x-3 no-print">
-            <button onClick={() => window.print()} className="text-sm text-slate-400 hover:text-white bg-slate-700 px-3 py-2 rounded-lg"><Printer className="w-4 h-4 mr-2" /> Print</button>
-            <button onClick={handleLogout} className="text-sm text-slate-400 hover:text-blue-500 flex items-center"><ArrowLeft className="w-4 h-4 mr-1" /> Logout</button>
+    <div id="admin-print-area" className="bg-slate-900 min-h-screen p-8 rounded-2xl shadow-2xl border border-slate-700 space-y-8">
+      
+      {/* HEADER */}
+      <div className="flex flex-col md:flex-row justify-between items-center border-b border-slate-700 pb-6">
+        <div>
+            <h2 className="text-3xl font-extrabold text-white flex items-center">
+                <Shield className="w-8 h-8 mr-3 text-red-500" /> Admin Command Center
+            </h2>
+            <p className="text-slate-400 text-sm mt-1">Logged in as: <span className="text-white font-bold">{currentUser?.name}</span> (System Administrator)</p>
+        </div>
+        <div className="flex space-x-3 mt-4 md:mt-0 no-print">
+            <button 
+                onClick={() => setActiveTab('PROJECT_GOD_VIEW')} 
+                className={`px-4 py-2 rounded-lg text-sm font-bold transition flex items-center ${activeTab === 'PROJECT_GOD_VIEW' ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-400'}`}
+            >
+                <Layers className="w-4 h-4 mr-2"/> Project God View
+            </button>
+            <button 
+                onClick={() => setActiveTab('USER_GOD_VIEW')} 
+                className={`px-4 py-2 rounded-lg text-sm font-bold transition flex items-center ${activeTab === 'USER_GOD_VIEW' ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-400'}`}
+            >
+                <Users className="w-4 h-4 mr-2"/> User God View
+            </button>
+            <button onClick={handleLogout} className="px-4 py-2 rounded-lg bg-red-900/50 text-red-400 hover:bg-red-900 border border-red-800 text-sm flex items-center ml-4">
+                <LogOut className="w-4 h-4 mr-2"/> Logout
+            </button>
         </div>
       </div>
-      
-      <div className="pt-4 border-t border-slate-700">
-        <h3 className="text-xl font-bold text-white mb-4 flex items-center"><Eye className="w-6 h-6 mr-2 text-blue-400" /> Recent Vendor Audits</h3>
-        <div className="space-y-4">{reportsHistory.slice(0, 15).map(item => (
-            <div key={item.id} className="p-4 bg-slate-900/50 rounded-xl border border-slate-700 cursor-default hover:bg-slate-900">
-                <div className="flex justify-between mb-2">
-                    <div>
-                        <h4 className="text-lg font-bold text-white">{item.projectTitle || "Project"} <span className="text-sm text-slate-400">vs {item.vendorName || "Vendor"}</span></h4>
-                    </div>
-                    <div className="text-right"><div className="text-xl font-bold text-blue-400">{getCompliancePercentage(item)}% Match</div></div>
-                </div>
+
+      {/* --- VIEW 1: PROJECT GOD VIEW --- */}
+      {activeTab === 'PROJECT_GOD_VIEW' && (
+          <div className="animate-in fade-in zoom-in duration-300">
+            <h3 className="text-xl font-bold text-blue-400 mb-4 flex items-center"><BarChart2 className="w-5 h-5 mr-2"/> Market Intelligence & Project Analytics</h3>
+            <div className="overflow-x-auto rounded-xl border border-slate-700 bg-slate-800/50 shadow-xl">
+                <table className="w-full text-left text-sm text-slate-400">
+                    <thead className="bg-slate-900 text-slate-200 uppercase font-bold text-xs">
+                        <tr>
+                            <th className="px-6 py-4">Date</th>
+                            <th className="px-6 py-4">Project Initiator</th>
+                            <th className="px-6 py-4">Project Title</th>
+                            <th className="px-6 py-4">Market Parameters</th>
+                            <th className="px-6 py-4">Contract Value</th>
+                            <th className="px-6 py-4 text-center">Score</th>
+                            <th className="px-6 py-4 text-center">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-700">
+                        {reportsHistory.map((rpt) => {
+                            const user = getUserDetails(rpt.ownerId);
+                            const intel = rpt.marketIntel || {};
+                            return (
+                                <tr key={rpt.id} className="hover:bg-slate-800 transition">
+                                    <td className="px-6 py-4 whitespace-nowrap">{new Date(rpt.timestamp).toLocaleDateString()}</td>
+                                    <td className="px-6 py-4">
+                                        <div className="font-bold text-white">{user.name}</div>
+                                        <div className="text-xs text-blue-400">{user.company}</div>
+                                    </td>
+                                    <td className="px-6 py-4">
+                                        <div className="text-white font-medium">{rpt.projectTitle || "Untitled"}</div>
+                                        <div className="text-xs text-slate-500 mt-1">Vendor: {rpt.vendorName}</div>
+                                    </td>
+                                    <td className="px-6 py-4">
+                                        <div className="flex flex-col gap-1">
+                                            <span className="text-xs text-slate-300"><span className="text-slate-500">Industry:</span> {intel.industry || "N/A"}</span>
+                                            <span className="text-xs text-slate-300"><span className="text-slate-500">Loc:</span> {intel.location || "N/A"}</span>
+                                            <span className="text-xs text-slate-300"><span className="text-slate-500">Dur:</span> {intel.duration || "N/A"}</span>
+                                        </div>
+                                    </td>
+                                    <td className="px-6 py-4">
+                                        <div className="text-white font-mono">{rpt.totalBidValue || "N/A"}</div>
+                                    </td>
+                                    <td className="px-6 py-4 text-center">
+                                        <div className={`inline-block px-3 py-1 rounded-full font-bold text-xs ${getCompliancePercentage(rpt) > 80 ? 'bg-green-900 text-green-300' : 'bg-amber-900 text-amber-300'}`}>
+                                            {getCompliancePercentage(rpt)}%
+                                        </div>
+                                    </td>
+                                    <td className="px-6 py-4 text-center">
+                                        <button onClick={() => loadReportFromHistory(rpt)} className="text-blue-400 hover:text-blue-300 font-bold text-xs border border-blue-500/30 px-3 py-1 rounded bg-blue-900/20">VIEW</button>
+                                    </td>
+                                </tr>
+                            );
+                        })}
+                    </tbody>
+                </table>
+                {reportsHistory.length === 0 && <div className="p-8 text-center text-slate-500 italic">No audits found in the database.</div>}
             </div>
-        ))}</div>
-      </div>
+          </div>
+      )}
+
+      {/* --- VIEW 2: USER GOD VIEW --- */}
+      {activeTab === 'USER_GOD_VIEW' && (
+          <div className="animate-in fade-in zoom-in duration-300">
+             <h3 className="text-xl font-bold text-green-400 mb-4 flex items-center"><Briefcase className="w-5 h-5 mr-2"/> Registered User Profiles</h3>
+             <div className="overflow-x-auto rounded-xl border border-slate-700 bg-slate-800/50 shadow-xl">
+                <table className="w-full text-left text-sm text-slate-400">
+                    <thead className="bg-slate-900 text-slate-200 uppercase font-bold text-xs">
+                        <tr>
+                            <th className="px-6 py-4">Name / Designation</th>
+                            <th className="px-6 py-4">Company</th>
+                            <th className="px-6 py-4">Contact Details</th>
+                            <th className="px-6 py-4">Role</th>
+                            <th className="px-6 py-4">Projects Audited</th>
+                            <th className="px-6 py-4">Joined Date</th>
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-700">
+                        {userList.map((u) => (
+                            <tr key={u.id} className="hover:bg-slate-800 transition">
+                                <td className="px-6 py-4">
+                                    <div className="font-bold text-white text-base">{u.name}</div>
+                                    <div className="text-xs text-slate-500 uppercase tracking-wider">{u.designation || "N/A"}</div>
+                                </td>
+                                <td className="px-6 py-4">
+                                    <span className="text-white font-medium bg-slate-700 px-2 py-1 rounded text-xs">{u.company}</span>
+                                </td>
+                                <td className="px-6 py-4">
+                                    <div className="flex items-center text-slate-300"><Mail className="w-3 h-3 mr-2 text-slate-500"/>{u.email}</div>
+                                    <div className="flex items-center text-slate-300 mt-1"><Phone className="w-3 h-3 mr-2 text-slate-500"/>{u.phone || "N/A"}</div>
+                                </td>
+                                <td className="px-6 py-4">
+                                    <span className={`px-2 py-1 rounded text-xs font-bold ${u.role === 'ADMIN' ? 'bg-red-900 text-red-300 border border-red-700' : 'bg-blue-900 text-blue-300 border border-blue-700'}`}>
+                                        {u.role}
+                                    </span>
+                                </td>
+                                <td className="px-6 py-4">
+                                    <div className="text-white font-bold">{getProjectCountForUser(u.id)} Projects</div>
+                                    <div className="text-xs text-slate-500 mt-1 max-w-xs truncate" title={getProjectsForUser(u.id)}>
+                                        {getProjectsForUser(u.id) || "None"}
+                                    </div>
+                                </td>
+                                <td className="px-6 py-4 text-xs font-mono text-slate-500">
+                                    {u.createdAt ? new Date(u.createdAt).toLocaleDateString() : "N/A"}
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+             </div>
+          </div>
+      )}
+
     </div>
   );
 };
@@ -891,10 +1026,11 @@ const App = () => {
 
                     TASK:
                     1. EXTRACT Vendor Name, Total Bid Value, and Payment Terms.
-                    2. CALCULATE a 'Risk Score' (0-100) based on non-compliance and vague language.
-                    3. IDENTIFY 'Red Line Alerts' -> Any legal deviations (Liability, Indemnity, Termination).
-                    4. AUDIT Mandatory Requirements (NDA, Timeline, Validity).
-                    5. COMPARE Line-by-Line: Does the Bid meet the RFQ?
+                    2. **MARKET INTEL:** Extract Project Location, Intended Duration, Industry Sector, and Currency.
+                    3. CALCULATE a 'Risk Score' (0-100) based on non-compliance and vague language.
+                    4. IDENTIFY 'Red Line Alerts' -> Any legal deviations (Liability, Indemnity, Termination).
+                    5. AUDIT Mandatory Requirements (NDA, Timeline, Validity).
+                    6. COMPARE Line-by-Line: Does the Bid meet the RFQ?
                     
                     **SCORING RULES:**
                     - Output findings with 'complianceScore' based strictly on this scale:
