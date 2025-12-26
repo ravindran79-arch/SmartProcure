@@ -1,10 +1,10 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { 
     FileUp, Send, Loader2, AlertTriangle, CheckCircle, List, FileText, BarChart2,
     Save, Clock, Zap, ArrowLeft, Users, Briefcase, Layers, UserPlus, LogIn, Tag,
     Shield, User, HardDrive, Phone, Mail, Building, Trash2, Eye, DollarSign, Activity, 
     Printer, Download, MapPin, Calendar, ThumbsUp, ThumbsDown, Gavel, Paperclip, Copy, Award, Lock, CreditCard, Info,
-    Scale, FileCheck, XCircle, Search, TrendingUp, AlertOctagon
+    Scale, FileCheck, XCircle, Search
 } from 'lucide-react'; 
 
 // --- FIREBASE IMPORTS ---
@@ -489,7 +489,8 @@ const ReportHistory = ({ reportsHistory, loadReportFromHistory, isAuthReady, use
 };
 
 // --- PAGE COMPONENTS (AuthPage) ---
-const AuthPage = ({ setCurrentPage, setErrorMessage, errorMessage, db, auth }) => {
+// UPDATED: Added isRegisteringRef prop to handle flow
+const AuthPage = ({ setCurrentPage, setErrorMessage, errorMessage, db, auth, isRegisteringRef }) => {
     const [regForm, setRegForm] = useState({ name: '', designation: '', company: '', email: '', phone: '', password: '' });
     const [loginForm, setLoginForm] = useState({ email: '', password: '' });
     const [isSubmitting, setIsSubmitting] = useState(false);
@@ -501,6 +502,10 @@ const AuthPage = ({ setCurrentPage, setErrorMessage, errorMessage, db, auth }) =
         e.preventDefault();
         setErrorMessage(null);
         setIsSubmitting(true);
+        
+        // --- RACE CONDITION FIX: LOCK REDIRECT ---
+        if (isRegisteringRef) isRegisteringRef.current = true;
+
         try {
             const userCred = await createUserWithEmailAndPassword(auth, regForm.email, regForm.password);
             
@@ -513,11 +518,11 @@ const AuthPage = ({ setCurrentPage, setErrorMessage, errorMessage, db, auth }) =
                 company: regForm.company,
                 email: regForm.email,
                 phone: regForm.phone,
-                role: 'PROCURER', // ROLE CHANGE
+                role: 'PROCURER', 
                 createdAt: Date.now()
             });
 
-            // TRIGGER WELCOME EMAIL (Writing to 'mail' collection)
+            // TRIGGER WELCOME EMAIL 
             await addDoc(collection(db, 'mail'), {
                 to: regForm.email,
                 message: {
@@ -531,7 +536,9 @@ const AuthPage = ({ setCurrentPage, setErrorMessage, errorMessage, db, auth }) =
                 }
             });
 
+            // Force Sign Out to prevent auto-login redirect
             await signOut(auth);
+            
             setLoginForm({ email: regForm.email, password: regForm.password });
             setErrorMessage('SUCCESS: Registration complete! A verification email has been sent. Please verify before logging in.'); 
         } catch (err) {
@@ -539,6 +546,8 @@ const AuthPage = ({ setCurrentPage, setErrorMessage, errorMessage, db, auth }) =
             setErrorMessage(err.message || 'Registration failed.');
         } finally {
             setIsSubmitting(false);
+            // --- UNLOCK REDIRECT ---
+            if (isRegisteringRef) isRegisteringRef.current = false;
         }
     };
 
@@ -626,129 +635,39 @@ const AuthPage = ({ setCurrentPage, setErrorMessage, errorMessage, db, auth }) =
     );
 };
 
-// --- UPDATED ADMIN DASHBOARD (GOD VIEW) ---
 const AdminDashboard = ({ setCurrentPage, currentUser, reportsHistory, loadReportFromHistory, handleLogout }) => {
   const [userList, setUserList] = useState([]);
-  
   useEffect(() => {
-    // Fetch users for God View Mapping
     getDocs(collection(getFirestore(), 'users')).then(snap => setUserList(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
   }, []);
-
-  // --- HELPER: Parse Currency Strings ---
-  const parseCurrency = (str) => {
-    if (!str) return 0;
-    // Remove non-numeric chars except dot and minus
-    const cleanStr = str.replace(/[^0-9.-]+/g, "");
-    let val = parseFloat(cleanStr);
-    
-    // Check for Multipliers (M, K, B)
-    if (str.toUpperCase().includes('M') || str.toUpperCase().includes('MILLION')) val *= 1000000;
-    else if (str.toUpperCase().includes('K') || str.toUpperCase().includes('THOUSAND')) val *= 1000;
-    else if (str.toUpperCase().includes('B') || str.toUpperCase().includes('BILLION')) val *= 1000000000;
-    
-    return isNaN(val) ? 0 : val;
-  };
-
-  // --- CALCULATE AGGREGATE METRICS ---
-  const totalAudits = reportsHistory.length;
-  const totalValue = reportsHistory.reduce((sum, r) => sum + parseCurrency(r.totalBidValue), 0);
-  const totalUsers = userList.length;
-  const proUsers = userList.filter(u => u.isSubscribed).length;
-  const criticalRisks = reportsHistory.filter(r => r.riskLevel === 'CRITICAL' || r.riskLevel === 'HIGH RISK').length;
-  const lowRisks = reportsHistory.filter(r => r.riskLevel === 'LOW RISK').length;
-
-  const getUserName = (uid) => {
-      const u = userList.find(user => user.id === uid);
-      return u ? `${u.name} (${u.company})` : "Unknown User";
+  
+  const exportToCSV = (data, filename) => {
+    const csvContent = "data:text/csv;charset=utf-8," + Object.keys(data[0]).join(",") + "\n" + data.map(e => Object.values(e).map(v => `"${v}"`).join(",")).join("\n");
+    const link = document.createElement("a"); link.href = encodeURI(csvContent); link.download = filename; document.body.appendChild(link); link.click(); document.body.removeChild(link);
   };
 
   return (
-    <div id="admin-print-area" className="bg-slate-800 p-8 rounded-2xl shadow-2xl border border-slate-700 space-y-8 min-h-screen">
-      
-      {/* HEADER */}
+    <div id="admin-print-area" className="bg-slate-800 p-8 rounded-2xl shadow-2xl border border-slate-700 space-y-8">
       <div className="flex justify-between items-center border-b border-slate-700 pb-4">
-        <div>
-            <h2 className="text-3xl font-bold text-white flex items-center"><Shield className="w-8 h-8 mr-3 text-red-500" /> SmartProcure God View</h2>
-            <p className="text-sm text-slate-400 mt-1">Platform Administrator Dashboard: <span className="text-blue-400 font-mono">ravindran.79@gmail.com</span></p>
-        </div>
+        <h2 className="text-3xl font-bold text-white flex items-center"><Shield className="w-8 h-8 mr-3 text-red-400" /> Admin Market Intel (Procurement)</h2>
         <div className="flex space-x-3 no-print">
-            <button onClick={() => window.print()} className="text-sm text-slate-400 hover:text-white bg-slate-700 px-3 py-2 rounded-lg"><Printer className="w-4 h-4 mr-2" /> Print Report</button>
+            <button onClick={() => window.print()} className="text-sm text-slate-400 hover:text-white bg-slate-700 px-3 py-2 rounded-lg"><Printer className="w-4 h-4 mr-2" /> Print</button>
             <button onClick={handleLogout} className="text-sm text-slate-400 hover:text-blue-500 flex items-center"><ArrowLeft className="w-4 h-4 mr-1" /> Logout</button>
         </div>
       </div>
       
-      {/* --- SECTION 1: PLATFORM PULSE TILES --- */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <div className="p-4 bg-slate-700/50 rounded-xl border border-slate-600">
-              <div className="flex items-center text-slate-400 text-sm mb-2"><Activity className="w-4 h-4 mr-2"/> Lifetime Audits</div>
-              <div className="text-3xl font-bold text-white">{totalAudits}</div>
-          </div>
-          <div className="p-4 bg-slate-700/50 rounded-xl border border-slate-600">
-              <div className="flex items-center text-slate-400 text-sm mb-2"><DollarSign className="w-4 h-4 mr-2"/> Total Value Processed</div>
-              <div className="text-3xl font-bold text-green-400">${(totalValue / 1000000).toFixed(1)}M</div>
-          </div>
-          <div className="p-4 bg-slate-700/50 rounded-xl border border-slate-600">
-              <div className="flex items-center text-slate-400 text-sm mb-2"><Users className="w-4 h-4 mr-2"/> Registered Procurers</div>
-              <div className="text-3xl font-bold text-blue-400">{totalUsers}</div>
-          </div>
-          <div className="p-4 bg-slate-700/50 rounded-xl border border-slate-600">
-              <div className="flex items-center text-slate-400 text-sm mb-2"><AlertOctagon className="w-4 h-4 mr-2 text-red-400"/> Critical Risks Found</div>
-              <div className="text-3xl font-bold text-red-400">{criticalRisks}</div>
-          </div>
-      </div>
-
-      {/* --- SECTION 2: MASTER AUDIT TABLE --- */}
       <div className="pt-4 border-t border-slate-700">
-        <h3 className="text-xl font-bold text-white mb-4 flex items-center"><List className="w-6 h-6 mr-2 text-blue-400" /> Master Audit Log (Global History)</h3>
-        
-        <div className="overflow-x-auto rounded-xl border border-slate-700 shadow-xl">
-            <table className="w-full text-left text-sm text-slate-300">
-                <thead className="bg-slate-900 text-slate-400 uppercase font-semibold">
-                    <tr>
-                        <th className="p-4">Date</th>
-                        <th className="p-4">Evaluator (User)</th>
-                        <th className="p-4">Project (RFQ)</th>
-                        <th className="p-4">Vendor (Bid)</th>
-                        <th className="p-4">Bid Value</th>
-                        <th className="p-4">Risk Level</th>
-                        <th className="p-4">Match %</th>
-                        <th className="p-4">Red Lines</th>
-                        <th className="p-4 text-center">Action</th>
-                    </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-700 bg-slate-800">
-                    {reportsHistory.map((report) => (
-                        <tr key={report.id} className="hover:bg-slate-700/50 transition">
-                            <td className="p-4 whitespace-nowrap text-slate-400">{new Date(report.timestamp).toLocaleDateString()}</td>
-                            <td className="p-4 font-medium text-white">{getUserName(report.ownerId)}</td>
-                            <td className="p-4 truncate max-w-[150px]" title={report.projectTitle}>{report.projectTitle || "Untitled"}</td>
-                            <td className="p-4 truncate max-w-[150px]" title={report.vendorName}>{report.vendorName || "Unknown"}</td>
-                            <td className="p-4 font-mono text-green-300">{report.totalBidValue || "N/A"}</td>
-                            <td className="p-4">
-                                <span className={`px-2 py-1 rounded text-xs font-bold ${
-                                    report.riskLevel === 'CRITICAL' || report.riskLevel === 'HIGH RISK' ? 'bg-red-900/50 text-red-300 border border-red-700' :
-                                    report.riskLevel === 'MEDIUM RISK' ? 'bg-amber-900/50 text-amber-300 border border-amber-700' :
-                                    'bg-green-900/50 text-green-300 border border-green-700'
-                                }`}>
-                                    {report.riskLevel}
-                                </span>
-                            </td>
-                            <td className="p-4 font-bold text-white">{getCompliancePercentage(report)}%</td>
-                            <td className="p-4 text-red-400 font-bold text-center">{report.redLineAlerts ? report.redLineAlerts.length : 0}</td>
-                            <td className="p-4 text-center">
-                                <button 
-                                    onClick={() => loadReportFromHistory(report)}
-                                    className="bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 rounded text-xs font-semibold flex items-center justify-center mx-auto"
-                                >
-                                    <Eye className="w-3 h-3 mr-1"/> View
-                                </button>
-                            </td>
-                        </tr>
-                    ))}
-                </tbody>
-            </table>
-        </div>
+        <h3 className="text-xl font-bold text-white mb-4 flex items-center"><Eye className="w-6 h-6 mr-2 text-blue-400" /> Recent Vendor Audits</h3>
+        <div className="space-y-4">{reportsHistory.slice(0, 15).map(item => (
+            <div key={item.id} className="p-4 bg-slate-900/50 rounded-xl border border-slate-700 cursor-default hover:bg-slate-900">
+                <div className="flex justify-between mb-2">
+                    <div>
+                        <h4 className="text-lg font-bold text-white">{item.projectTitle || "Project"} <span className="text-sm text-slate-400">vs {item.vendorName || "Vendor"}</span></h4>
+                    </div>
+                    <div className="text-right"><div className="text-xl font-bold text-blue-400">{getCompliancePercentage(item)}% Match</div></div>
+                </div>
+            </div>
+        ))}</div>
       </div>
     </div>
   );
@@ -827,6 +746,9 @@ const App = () => {
     const [reportsHistory, setReportsHistory] = useState([]);
     const [showPaywall, setShowPaywall] = useState(false);
     
+    // 1. ADD REF TO TRACK REGISTRATION STATE
+    const isRegisteringRef = useRef(false);
+
     const [RFQFile, setRFQFile] = useState(null);
     const [BidFile, setBidFile] = useState(null);
     const [report, setReport] = useState(null);
@@ -843,6 +765,11 @@ const App = () => {
     useEffect(() => {
         if (!auth) return;
         const unsubscribe = onAuthStateChanged(auth, async (user) => {
+            // 2. CHECK REF - IGNORE AUTO-LOGIN IF REGISTERING
+            if (isRegisteringRef.current) {
+                return;
+            }
+
             if (user) {
                 setUserId(user.uid);
                 try {
@@ -945,7 +872,6 @@ const App = () => {
             const rfqContent = await processFile(RFQFile);
             const bidContent = await processFile(BidFile);
             
-            // --- UPDATED SYSTEM PROMPT FOR SCORING LOGIC ---
             const systemPrompt = {
                 parts: [{
                     text: `You are the SmartProcure AI Auditor. 
@@ -1060,7 +986,15 @@ const App = () => {
     const renderPage = () => {
         switch (currentPage) {
             case PAGE.HOME:
-                return <AuthPage setCurrentPage={setCurrentPage} setErrorMessage={setErrorMessage} errorMessage={errorMessage} db={db} auth={auth} />;
+                // 3. PASS REF TO AUTH PAGE
+                return <AuthPage 
+                    setCurrentPage={setCurrentPage} 
+                    setErrorMessage={setErrorMessage} 
+                    errorMessage={errorMessage} 
+                    db={db} 
+                    auth={auth} 
+                    isRegisteringRef={isRegisteringRef} 
+                />;
             case PAGE.COMPLIANCE_CHECK:
                 return <AuditPage 
                     title="Vendor Evaluation & Risk Audit" rfqTitle="RFQ" bidTitle="Proposal" role="PROCURER"
