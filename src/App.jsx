@@ -4,7 +4,7 @@ import {
     Save, Clock, Zap, ArrowLeft, Users, Briefcase, Layers, UserPlus, LogIn, Tag,
     Shield, User, HardDrive, Phone, Mail, Building, Trash2, Eye, DollarSign, Activity, 
     Printer, Download, MapPin, Calendar, ThumbsUp, ThumbsDown, Gavel, Paperclip, Copy, Award, Lock, CreditCard, Info,
-    Scale, FileCheck, XCircle, Search
+    Scale, FileCheck, XCircle, Search, LogOut
 } from 'lucide-react'; 
 
 // --- FIREBASE IMPORTS ---
