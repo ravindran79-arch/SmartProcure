@@ -512,6 +512,7 @@ const AuthPage = ({ setCurrentPage, setErrorMessage, errorMessage, db, auth, isR
             // --- EMAIL VERIFICATION ---
             await sendEmailVerification(userCred.user);
             
+            // --- WRITE USER PROFILE ---
             await setDoc(doc(db, 'users', userCred.user.uid), {
                 name: regForm.name,
                 designation: regForm.designation,
@@ -522,19 +523,25 @@ const AuthPage = ({ setCurrentPage, setErrorMessage, errorMessage, db, auth, isR
                 createdAt: Date.now()
             });
 
-            // TRIGGER WELCOME EMAIL 
-            await addDoc(collection(db, 'mail'), {
-                to: regForm.email,
-                message: {
-                    subject: 'Welcome to SmartProcure – Start Evaluating Vendors',
-                    html: `
-                        <p>Hi ${regForm.name},</p>
-                        <p>Welcome to <strong>SmartProcure</strong>. Your automated AI procurement auditor is ready.</p>
-                        <p>You have 3 Free Vendor Evaluations.</p>
-                        <p>Get started by uploading your RFQ and a Vendor Proposal.</p>
-                    `
-                }
-            });
+            // --- WELCOME EMAIL (ISOLATED IN TRY/CATCH) ---
+            // If Firestore rules for 'mail' collection are missing, this fails silently 
+            // instead of blocking the whole registration.
+            try {
+                await addDoc(collection(db, 'mail'), {
+                    to: regForm.email,
+                    message: {
+                        subject: 'Welcome to SmartProcure – Start Evaluating Vendors',
+                        html: `
+                            <p>Hi ${regForm.name},</p>
+                            <p>Welcome to <strong>SmartProcure</strong>. Your automated AI procurement auditor is ready.</p>
+                            <p>You have 3 Free Vendor Evaluations.</p>
+                            <p>Get started by uploading your RFQ and a Vendor Proposal.</p>
+                        `
+                    }
+                });
+            } catch (emailErr) {
+                console.warn("Welcome email skipped due to permissions:", emailErr);
+            }
 
             // Force Sign Out to prevent auto-login redirect
             await signOut(auth);
@@ -746,7 +753,7 @@ const App = () => {
     const [reportsHistory, setReportsHistory] = useState([]);
     const [showPaywall, setShowPaywall] = useState(false);
     
-    // 1. ADD REF TO TRACK REGISTRATION STATE
+    // 1. REF TO TRACK REGISTRATION STATE (Fixes Race Condition)
     const isRegisteringRef = useRef(false);
 
     const [RFQFile, setRFQFile] = useState(null);
