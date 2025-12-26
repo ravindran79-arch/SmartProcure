@@ -639,7 +639,7 @@ const AuthPage = ({ setCurrentPage, setErrorMessage, errorMessage, db, auth, isR
     );
 };
 
-// --- UPDATED ADMIN DASHBOARD (GOD VIEW) ---
+// --- UPDATED ADMIN DASHBOARD (GOD VIEW WITH CSV EXPORT) ---
 const AdminDashboard = ({ setCurrentPage, currentUser, reportsHistory, loadReportFromHistory, handleLogout }) => {
   const [userList, setUserList] = useState([]);
   const [activeTab, setActiveTab] = useState('PROJECT_GOD_VIEW'); // 'PROJECT_GOD_VIEW' or 'USER_GOD_VIEW'
@@ -669,6 +669,59 @@ const AdminDashboard = ({ setCurrentPage, currentUser, reportsHistory, loadRepor
       return [...new Set(projects)].join(", "); // Unique titles only
   };
 
+  // --- CSV EXPORT FUNCTION ---
+  const exportToCSV = (type) => {
+    let headers = [];
+    let rows = [];
+    let filename = "";
+
+    if (type === 'PROJECTS') {
+        filename = "market_intel.csv";
+        headers = ["Date", "Initiator Name", "Company", "Project Title", "Vendor", "Total Value", "Location", "Duration", "Industry", "Score"];
+        rows = reportsHistory.map(rpt => {
+            const user = getUserDetails(rpt.ownerId);
+            const intel = rpt.marketIntel || {};
+            return [
+                new Date(rpt.timestamp).toLocaleDateString(),
+                `"${user.name}"`,
+                `"${user.company}"`,
+                `"${rpt.projectTitle || 'Untitled'}"`,
+                `"${rpt.vendorName || 'Unknown'}"`,
+                `"${rpt.totalBidValue || '0'}"`,
+                `"${intel.location || 'N/A'}"`,
+                `"${intel.duration || 'N/A'}"`,
+                `"${intel.industry || 'N/A'}"`,
+                `${getCompliancePercentage(rpt)}%`
+            ];
+        });
+    } else {
+        filename = "user_list.csv";
+        headers = ["Name", "Designation", "Company", "Email", "Phone", "Role", "Join Date", "Projects Count"];
+        rows = userList.map(u => [
+            `"${u.name}"`,
+            `"${u.designation || 'N/A'}"`,
+            `"${u.company}"`,
+            `"${u.email}"`,
+            `"${u.phone || 'N/A'}"`,
+            `"${u.role}"`,
+            new Date(u.createdAt).toLocaleDateString(),
+            getProjectCountForUser(u.id)
+        ]);
+    }
+
+    const csvContent = "data:text/csv;charset=utf-8," 
+        + headers.join(",") + "\n" 
+        + rows.map(e => e.join(",")).join("\n");
+        
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", filename);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   return (
     <div id="admin-print-area" className="bg-slate-900 min-h-screen p-8 rounded-2xl shadow-2xl border border-slate-700 space-y-8">
       
@@ -693,7 +746,10 @@ const AdminDashboard = ({ setCurrentPage, currentUser, reportsHistory, loadRepor
             >
                 <Users className="w-4 h-4 mr-2"/> User God View
             </button>
-            <button onClick={handleLogout} className="px-4 py-2 rounded-lg bg-red-900/50 text-red-400 hover:bg-red-900 border border-red-800 text-sm flex items-center ml-4">
+            <button onClick={() => window.print()} className="px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-white text-sm flex items-center ml-2">
+                <Printer className="w-4 h-4 mr-2"/> Print
+            </button>
+            <button onClick={handleLogout} className="px-4 py-2 rounded-lg bg-red-900/50 text-red-400 hover:bg-red-900 border border-red-800 text-sm flex items-center ml-2">
                 <LogOut className="w-4 h-4 mr-2"/> Logout
             </button>
         </div>
@@ -702,7 +758,12 @@ const AdminDashboard = ({ setCurrentPage, currentUser, reportsHistory, loadRepor
       {/* --- VIEW 1: PROJECT GOD VIEW --- */}
       {activeTab === 'PROJECT_GOD_VIEW' && (
           <div className="animate-in fade-in zoom-in duration-300">
-            <h3 className="text-xl font-bold text-blue-400 mb-4 flex items-center"><BarChart2 className="w-5 h-5 mr-2"/> Market Intelligence & Project Analytics</h3>
+            <div className="flex justify-between items-center mb-4">
+                 <h3 className="text-xl font-bold text-blue-400 flex items-center"><BarChart2 className="w-5 h-5 mr-2"/> Market Intelligence & Project Analytics</h3>
+                 <button onClick={() => exportToCSV('PROJECTS')} className="no-print text-xs font-bold bg-green-600 hover:bg-green-500 text-white px-3 py-1.5 rounded flex items-center">
+                    <Download className="w-3 h-3 mr-2"/> Export CSV
+                 </button>
+            </div>
             <div className="overflow-x-auto rounded-xl border border-slate-700 bg-slate-800/50 shadow-xl">
                 <table className="w-full text-left text-sm text-slate-400">
                     <thead className="bg-slate-900 text-slate-200 uppercase font-bold text-xs">
@@ -713,7 +774,7 @@ const AdminDashboard = ({ setCurrentPage, currentUser, reportsHistory, loadRepor
                             <th className="px-6 py-4">Market Parameters</th>
                             <th className="px-6 py-4">Contract Value</th>
                             <th className="px-6 py-4 text-center">Score</th>
-                            <th className="px-6 py-4 text-center">Action</th>
+                            <th className="px-6 py-4 text-center no-print">Action</th>
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-700">
@@ -746,7 +807,7 @@ const AdminDashboard = ({ setCurrentPage, currentUser, reportsHistory, loadRepor
                                             {getCompliancePercentage(rpt)}%
                                         </div>
                                     </td>
-                                    <td className="px-6 py-4 text-center">
+                                    <td className="px-6 py-4 text-center no-print">
                                         <button onClick={() => loadReportFromHistory(rpt)} className="text-blue-400 hover:text-blue-300 font-bold text-xs border border-blue-500/30 px-3 py-1 rounded bg-blue-900/20">VIEW</button>
                                     </td>
                                 </tr>
@@ -762,7 +823,12 @@ const AdminDashboard = ({ setCurrentPage, currentUser, reportsHistory, loadRepor
       {/* --- VIEW 2: USER GOD VIEW --- */}
       {activeTab === 'USER_GOD_VIEW' && (
           <div className="animate-in fade-in zoom-in duration-300">
-             <h3 className="text-xl font-bold text-green-400 mb-4 flex items-center"><Briefcase className="w-5 h-5 mr-2"/> Registered User Profiles</h3>
+             <div className="flex justify-between items-center mb-4">
+                 <h3 className="text-xl font-bold text-green-400 flex items-center"><Briefcase className="w-5 h-5 mr-2"/> Registered User Profiles</h3>
+                 <button onClick={() => exportToCSV('USERS')} className="no-print text-xs font-bold bg-green-600 hover:bg-green-500 text-white px-3 py-1.5 rounded flex items-center">
+                    <Download className="w-3 h-3 mr-2"/> Export CSV
+                 </button>
+            </div>
              <div className="overflow-x-auto rounded-xl border border-slate-700 bg-slate-800/50 shadow-xl">
                 <table className="w-full text-left text-sm text-slate-400">
                     <thead className="bg-slate-900 text-slate-200 uppercase font-bold text-xs">
