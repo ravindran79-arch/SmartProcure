@@ -11,7 +11,8 @@ import {
 import { initializeApp } from 'firebase/app';
 import { 
     getAuth, onAuthStateChanged, createUserWithEmailAndPassword, 
-    signInWithEmailAndPassword, signOut, sendEmailVerification 
+    signInWithEmailAndPassword, signOut, sendEmailVerification,
+    sendPasswordResetEmail // <--- ADDED THIS IMPORT
 } from 'firebase/auth';
 import { 
     getFirestore, collection, addDoc, onSnapshot, query, doc, setDoc, 
@@ -508,6 +509,21 @@ const AuthPage = ({ setCurrentPage, setErrorMessage, errorMessage, db, auth, isR
     const handleRegChange = (e) => setRegForm({ ...regForm, [e.target.name]: e.target.value });
     const handleLoginChange = (e) => setLoginForm({ ...loginForm, [e.target.name]: e.target.value });
 
+    // --- ADDED: FORGOT PASSWORD HANDLER ---
+    const handlePasswordReset = async () => {
+        const email = prompt("Please enter your email address to reset your password:");
+        if (email) {
+            try {
+                await sendPasswordResetEmail(auth, email);
+                alert("Password reset email sent! Please check your inbox.");
+            } catch (error) {
+                console.error("Reset error", error);
+                alert("Error: " + error.message);
+            }
+        }
+    };
+    // --------------------------------------
+
     const handleRegister = async (e) => {
         e.preventDefault();
         setErrorMessage(null);
@@ -620,6 +636,18 @@ const AuthPage = ({ setCurrentPage, setErrorMessage, errorMessage, db, auth, isR
                     <form onSubmit={handleLogin} className="space-y-4">
                         <FormInput id="login-email" label="Email *" name="email" value={loginForm.email} onChange={handleLoginChange} type="email" />
                         <FormInput id="login-password" label="Password *" name="password" value={loginForm.password} onChange={handleLoginChange} type="password" />
+
+                        {/* --- ADDED: FORGOT PASSWORD LINK --- */}
+                        <div className="flex justify-end">
+                            <button 
+                                type="button" 
+                                onClick={handlePasswordReset} 
+                                className="text-sm text-blue-400 hover:text-blue-300 underline decoration-dotted"
+                            >
+                                Forgot Password?
+                            </button>
+                        </div>
+                        {/* ----------------------------------- */}
 
                         <button type="submit" disabled={isSubmitting} className={`w-full py-3 text-lg font-semibold rounded-xl text-slate-900 transition-all shadow-lg mt-6 bg-green-400 hover:bg-green-300 disabled:opacity-50 flex items-center justify-center`}>
                             {isSubmitting ? <Loader2 className="animate-spin h-5 w-5 mr-2" /> : <LogIn className="h-5 w-5 mr-2" />}
